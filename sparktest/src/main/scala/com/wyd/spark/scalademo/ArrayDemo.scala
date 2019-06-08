@@ -3,6 +3,8 @@ package com.wyd.spark.scalademo
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
 
+
+
 object ArrayDemo {
 
   def main(args: Array[String]): Unit = {
@@ -64,6 +66,8 @@ object ArrayDemo {
     val rdd10: RDD[(String, Int)] = sc.parallelize(List(("cat",2),("cat",5),("mouse",4),("dog",12),("mouse",2)))
     println(rdd10.aggregateByKey(0)(_+_,_+_).collect().toBuffer)
 
+    println(rdd1.aggregate(0)(math.max(_,_),_+_))
+
     //统计的是key出现的次数，和value没关系
     println(rdd10.countByKey().toBuffer)
 
@@ -77,7 +81,24 @@ object ArrayDemo {
     val rdd14: RDD[(Int, String)] = rdd13.foldByKey("")(_+_)
     println(rdd14.collect().toBuffer)
 
+    //foreach一条一条拿，foreachPartition一次拿一个分区
+    rdd1.foreachPartition(it => {
+      it.foreach(x => println(x * 100))
+    })
 
+    //拉链操作 zip
+    //得到ArrayBuffer((dog,1), (cat,1), (gnu,2), (salmon,2), (rabbit,2), (turkey,1), (wolf,2), (bear,2), (bee,2))
+    val rdd15 = sc.parallelize(List("dog","cat","gnu","salmon","rabbit","turkey","wolf","bear","bee"),3)
+    val rdd16 = sc.parallelize(List(1,1,2,2,2,1,2,2,2),3)
+    val rdd17: RDD[(String, Int)] = rdd15.zip(rdd16)
+    println(rdd17.collect().toBuffer)
+
+    val rdd18 = sc.parallelize(Array((1,"dog"),(1,"cat"),(2,"gnu"),(2,"salmon"),(2,"rabbit"),(1,"turkey"),(2,"wolf"),(2,"bear"),(2,"bee")),2)
+
+    import scala.collection.mutable.ListBuffer
+    val rdd19: RDD[(Int, ListBuffer[String])] = rdd18.combineByKey(x => ListBuffer(x), (m: ListBuffer[String], n: String) => m += n, (a: ListBuffer[String], b: ListBuffer[String]) => a ++= b)
+
+    println(rdd19.collect().toBuffer)
 
     sc.stop()
   }
