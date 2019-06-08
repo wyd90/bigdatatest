@@ -50,21 +50,21 @@ object GroupFavTeacher3 {
     sc.stop()
   }
 
-  class TeacherAndSubjectPartitioner(subjects: Array[String]) extends Partitioner {
+}
 
-    var rules = new mutable.HashMap[String,Int]()
-    var i = 0;
-    for(subject <- subjects){
-      rules.put(subject,i)
-      i += 1
-    }
+class TeacherAndSubjectPartitioner(subjects: Array[String]) extends Partitioner {
 
-    override def numPartitions: Int = subjects.length
-
-    override def getPartition(key: Any): Int = {
-      val tuple = key.asInstanceOf[(String,String)]
-      rules(tuple._1)
-    }
+  var rules = new mutable.HashMap[String,Int]()
+  var i = 0;
+  for(subject <- subjects){
+    rules.put(subject,i)
+    i += 1
   }
 
+  override def numPartitions: Int = subjects.length
+
+  override def getPartition(key: Any): Int = {
+    val tuple = key.asInstanceOf[(String,String)]
+    rules(tuple._1)
+  }
 }
