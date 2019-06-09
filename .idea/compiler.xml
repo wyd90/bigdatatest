@@ -10,8 +10,5 @@
         <module name="sparktest" />
       </profile>
     </annotationProcessing>
-    <bytecodeTargetLevel>
-      <module name="bigdatatest" target="1.5" />
-    </bytecodeTargetLevel>
   </component>
 </project>
