@@ -99,7 +99,9 @@ object ArrayDemo {
     val rdd19: RDD[(Int, ListBuffer[String])] = rdd18.combineByKey(x => ListBuffer(x), (m: ListBuffer[String], n: String) => m += n, (a: ListBuffer[String], b: ListBuffer[String]) => a ++= b)
 
     println(rdd19.collect().toBuffer)
-
+    
+    println("hello word")
+    
     sc.stop()
   }
 
