@@ -20,8 +20,7 @@ object SparkSqlWCSQL2xAPI {
     val result: DataFrame = spark.sql("select value as word,count(1) as cnts from words group by value")
 
     result.show()
-    
-    println("test")
+
     
     spark.stop()
   }
