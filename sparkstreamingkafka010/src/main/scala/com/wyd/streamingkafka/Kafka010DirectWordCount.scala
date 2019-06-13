@@ -3,17 +3,32 @@ package com.wyd.streamingkafka
 import java.lang
 
 import com.wyd.redisutil.JedisClusterConnectPool
+import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.apache.spark.SparkConf
 import org.apache.spark.rdd.RDD
 import org.apache.spark.streaming.kafka010._
 import org.apache.spark.streaming.{Duration, StreamingContext}
 import redis.clients.jedis.JedisCluster
+import scalikejdbc.config.DBs
+import scalikejdbc.{DB, SQL}
 
+/**
+  * sparkstreaming读kafka数据计算wordcount偏移量存到mysql里
+  *
+  * mysql建表语句
+  * CREATE TABLE `offset` (
+  * `groupId` varchar(255) DEFAULT NULL,
+  * `topic` varchar(255) DEFAULT NULL,
+  * `partition` int(11) DEFAULT NULL,
+  * `untilOffset` bigint(20) DEFAULT NULL
+  * ) ENGINE=InnoDB DEFAULT CHARSET=utf8
+  *
+  */
 object Kafka010DirectWordCount {
 
   def main(args: Array[String]): Unit = {
-    val group = "ng0"
+    val group = "ng1"
     val topic = "nmywordcount"
 
     val conf = new SparkConf().setAppName("Kafka010DirectWordCount").setMaster("local[*]")
@@ -31,13 +46,31 @@ object Kafka010DirectWordCount {
 
     val topics = Array(topic)
 
-    val stream = KafkaUtils.createDirectStream[String, String](
-      ssc,
-      //位置策略（如果kafka和spark程序部署在一起，会有最优位置感知）
-      LocationStrategies.PreferConsistent,
-      //订阅的策略（可以指定用正则的方式读取topic，比如my-orders-*）
-      ConsumerStrategies.Subscribe[String, String](topics, kafkaParams)
-    )
+    DBs.setup()
+    val fromdbOffsets = DB.readOnly(
+      implicit session => {
+        SQL(s"select * from offset where groupId ='${group}'")
+          .map(rs => {
+            (new TopicPartition(rs.string("topic"), rs.int("partition")), rs.long("untilOffset"))
+          }).list().apply()
+      }
+    ).toMap
+
+    val stream = if(fromdbOffsets.size == 0){
+      KafkaUtils.createDirectStream[String,String](
+        ssc,
+        LocationStrategies.PreferConsistent,
+        ConsumerStrategies.Subscribe[String,String](topics, kafkaParams)
+      )
+    } else {
+      KafkaUtils.createDirectStream[String, String](
+        ssc,
+        LocationStrategies.PreferConsistent,
+        ConsumerStrategies.Assign[String,String](fromdbOffsets.keys, kafkaParams, fromdbOffsets)
+      )
+    }
+
+
 
     stream.foreachRDD(kafkaRDD =>{
       if(!kafkaRDD.isEmpty()){
@@ -51,6 +84,15 @@ object Kafka010DirectWordCount {
             conn.incrBy(x._1, x._2.toLong)
           })
         })
+
+        DB.localTx(
+          implicit session => {
+            for(or <- offsetRanges){
+              SQL("replace into `offset` (groupId,topic,`partition`,untilOffset) values(?,?,?,?)")
+                .bind(group, or.topic, or.partition, or.untilOffset).update().apply()
+            }
+          }
+        )
 
       }
     })

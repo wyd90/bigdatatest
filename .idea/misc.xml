@@ -9,6 +9,7 @@
         <option value="$PROJECT_DIR$/hiveonsparktest/pom.xml" />
         <option value="$PROJECT_DIR$/sparkstreamingkafka080/pom.xml" />
         <option value="$PROJECT_DIR$/sparkstreamingkafka010/pom.xml" />
+        <option value="$PROJECT_DIR$/sparkmongo/pom.xml" />
       </list>
     </option>
   </component>
