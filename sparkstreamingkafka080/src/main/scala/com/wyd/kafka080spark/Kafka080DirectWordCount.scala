@@ -94,6 +94,7 @@ object Kafka080DirectWordCount {
             println(x._1 + ":"+x._2)
             conn.incrBy(x._1,x._2.toLong)
           })
+          //jedis cluster连接池不能关，因为是池化技术
         })
 
         for(o <- offsetRanges){
