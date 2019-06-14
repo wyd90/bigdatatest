@@ -7,6 +7,7 @@
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
         <module name="bigdatatest" />
+        <module name="flumetest" />
         <module name="hiveonsparktest" />
         <module name="sparkmongo" />
         <module name="sparkstreamingkafka010" />
