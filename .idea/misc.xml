@@ -12,6 +12,7 @@
         <option value="$PROJECT_DIR$/sparkmongo/pom.xml" />
         <option value="$PROJECT_DIR$/flumetest/pom.xml" />
         <option value="$PROJECT_DIR$/hbasetest/pom.xml" />
+        <option value="$PROJECT_DIR$/hadooptest/pom.xml" />
       </list>
     </option>
   </component>

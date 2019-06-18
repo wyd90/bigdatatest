@@ -8,6 +8,7 @@
         <outputRelativeToContentRoot value="true" />
         <module name="bigdatatest" />
         <module name="flumetest" />
+        <module name="hadooptest" />
         <module name="hbasetest" />
         <module name="hiveonsparktest" />
         <module name="sparkmongo" />
