@@ -11,6 +11,7 @@
         <option value="$PROJECT_DIR$/sparkstreamingkafka010/pom.xml" />
         <option value="$PROJECT_DIR$/sparkmongo/pom.xml" />
         <option value="$PROJECT_DIR$/flumetest/pom.xml" />
+        <option value="$PROJECT_DIR$/hbasetest/pom.xml" />
       </list>
     </option>
   </component>
