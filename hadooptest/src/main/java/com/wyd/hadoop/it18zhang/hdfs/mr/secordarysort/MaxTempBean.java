@@ -1,4 +1,4 @@
-package com.wyd.hadoop.it18zhang.hdfs.mr.inputsampler;
+package com.wyd.hadoop.it18zhang.hdfs.mr.secordarysort;
 
 import org.apache.hadoop.io.WritableComparable;
 

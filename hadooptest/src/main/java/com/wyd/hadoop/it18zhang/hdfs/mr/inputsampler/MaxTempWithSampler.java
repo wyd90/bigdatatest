@@ -69,10 +69,6 @@ public class MaxTempWithSampler {
         //写入分区文件
         InputSampler.writePartitionFile(job, sampler);
 
-
-
-
-
         job.waitForCompletion(true);
 
     }
