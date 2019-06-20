@@ -1,0 +1,196 @@
+hadoop独立模式stabdalone
+	什么都不用配就是本地模式，这时hdfs的文件系统就是centos的文件系统
+	hdfs dfs -ls /
+
+Pseudodistributed 伪分布模式
+
+vi core-site.xml
+<?xml version="1.0"?>
+			<configuration>
+				<property>
+					<name>fs.defaultFS</name>
+					<value>hdfs://localhost/</value>
+				</property>
+			</configuration>
+
+vi hdfs-site.xml
+<?xml version="1.0"?>
+			<configuration>
+				<property>
+					<name>dfs.replication</name>
+					<value>1</value>
+				</property>
+			</configuration>
+
+vi mapred-site.xml
+<?xml version="1.0"?>
+			<configuration>
+				<property>
+					<name>mapreduce.framework.name</name>
+					<value>yarn</value>
+				</property>
+			</configuration>
+
+vi yarn-site.xml
+<?xml version="1.0"?>
+			<configuration>
+				<property>
+					<name>yarn.resourcemanager.hostname</name>
+					<value>localhost</value>
+				</property>
+				<property>
+					<name>yarn.nodemanager.aux-services</name>
+					<value>mapreduce_shuffle</value>
+				</property>
+			</configuration>
+
+hdfs namenode rpc通信端口8020
+	 datanode rpc通信端口50010
+	 namenode webui端口 50070
+	 datanode webui端口 50075
+	 2namenode辅助名称节点端口  50090
+
+
+vi hadoop-env.sh
+export JAVA_HOME=/usr/local/java/jdk1.8
+
+对hdfs的文件系统进行格式化
+
+vi hdfs-site.xml
+<property>
+  <name>dfs.name.dir</name>
+  <value>/home/hadoop/hdfs/name</value>
+  <description>namenode上存储hdfs名字空间元数据</description>
+ </property>
+ 
+ <property>
+  <name>dfs.data.dir</name>
+  <value>/home/hadoop/hdsf/data</value>
+  <description>datanode上数据块的物理存储位置</description>
+ </property>
+
+vi core-site.xml
+<property>
+ <name>hadoop.tmp.dir</name>
+ <value>/home/hadoop/hadooptmp</value>
+ <description>namenode上本地的hadoop临时文件夹</description>
+ </property>
+
+hadoop namenode -format
+
+
+
+start-all.sh
+会启动
+DataNode
+ResourceManager
+SecondaryNameNode
+NameNode
+NodeManager
+
+hadoop的四大模块
+common
+hdfs  //分布式文件系统模块 namenode + datanode + secondarynamenode
+mapred
+yarn  //resourcemanager + nodemanager
+
+--------------------------------------------------------
+
+配置hadoop完全分布式
+[core-site.xml]
+		<?xml version="1.0" encoding="UTF-8"?>
+		<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+		<configuration>
+				<property>
+						<name>fs.defaultFS</name>
+						<value>hdfs://s201/</value>
+				</property>
+		</configuration>
+
+		[hdfs-site.xml]
+		<?xml version="1.0" encoding="UTF-8"?>
+		<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+		<configuration>
+				<property>
+						<name>dfs.replication</name>
+						<value>3</value>
+				</property>
+		</configuration>
+		
+		[mapred-site.xml]
+			不变
+		
+		[yarn-site.xml]
+		<?xml version="1.0"?>
+		<configuration>
+				<property>
+						<name>yarn.resourcemanager.hostname</name>
+						<value>s201</value>
+				</property>
+				<property>
+						<name>yarn.nodemanager.aux-services</name>
+						<value>mapreduce_shuffle</value>
+				</property>
+		</configuration>
+
+		[slaves]
+		s202
+		s203
+		s204
+
+		[hadoop-env.sh]
+		...
+		export JAVA_HOME=/soft/jdk
+
+----------------------------------------------------------------
+环境变量指定的目录/usr/local/bin
+放在其中的脚本都能随意目录执行
+
+编写脚本
+#!/bin/bash
+i=1
+params=$@
+for((i = 1 ; i <= 5 ;i = $i + 1 ));do
+	ssh node$i $params
+done
+
+--------------------------------------------------------------------
+
+hadoop fs等价于hdfs dfs
+
+hadoop fs -ls -R 递归查询
+
+hadoop fs -lsr 递归
+
+hadoop fs -rm -r -f 删除文件
+
+hadoop fs -appendToFile a.txt /user/centos/hadoop/1.txt
+
+---------------------------------------------------------------------
+
+本地模式
+fs.defaultFS=file:///
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

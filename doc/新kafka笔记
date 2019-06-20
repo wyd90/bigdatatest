@@ -1,0 +1,69 @@
+kafka集群在zk的配置
+/controller
+/controller_epoch
+/brokers
+	/brokers/ids  ##集群所有的主机
+	/brokers/topics/具体的主题/partitions/[0,1,2]/state
+	
+/admin
+/isr_change_notification
+
+
+Kafka生产者不往zookeeper连接
+
+
+
+repliation_factor 2 partitions 5
+2*5 = 10 对应十个文件夹
+副本数不能超过broker的数量
+
+
+重新布局分区和副本，手动再平衡
+
+--replica-assignment  一号分区的副本1的brokerid:一号分区的副本2的brokerid:,二号分区的副本一的brokerid:二号分区的副本二的brokerid,...
+
+kafka-topic.sh --alter --zookeeper node3:2181 --topic test2 --replica-assignment node1:node2,node2:node3
+kafka-topic.sh --create --zookeeper node3:2181 --topic test2 --replica-assignment node1:node2,node2:node3
+
+新leader的选举是通过zookeeper中 isr中的注册顺序
+
+kafka支持的副本模式
+同步副本
+
+生产者发送给leader后，要等到所有follower同步完成发送给leader回执后，leader再发送回执给product后，才算完成，保证消息是可靠的
+默认情况下是同步模式
+1.producer联系zk识别leader
+2.producer向leader发送消息
+3.leader收到消息写入本地log
+4.follower从leader 拉取消息
+5.follower向本地写入log
+6.follower向leader发送ack消息
+7.leader收到所有follower的ack消息
+8.leader向producer回传ack
+异步副本
+只要leader写入log成功，就向producer发送ack确认回执，不能保证数据可靠
+
+flume sink写入完成后向redis里记录行号，确保不重复消费
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

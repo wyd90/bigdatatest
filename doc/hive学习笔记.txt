@@ -1,0 +1,75 @@
+Hive创建表格报【Error, return code 1 from org.apache.hadoop.hive.ql.exec.DDLTask. MetaException
+解决方案，修改mysql 数据库字符集为latin1
+drop database hive; 
+create database hive; 
+alter database hive character set latin1;
+
+
+hive默认分隔符'\001'  ^A
+在linux的当前用户目录中，编辑一个.hiverc文件，将参数写入其中
+set hive.cli.print.header=true;
+set hive.cli.print.current.db=true;
+
+将hive安装路径加入path
+
+直接启动hive，就打hive
+启动hive服务，hiveserver2
+启动hive服务端 beeline 
+然后输入!connect jdbc:hive2://node4:10000
+输入hdfs用户  root
+密码直接回车
+在后台启动hive服务
+nohup hiveserver2 1>/dev/null 2>&1 &
+
+beeline -u jdbc:hive2://node4:10000 -n root
+hive -e "" 用脚本执行hive
+
+或者把sql写在hql文件里，用hive -f xxx.hql执行文件
+
+建表语句
+create table t_order(id string,create_time string,amount float,uid string);
+
+create table t_order(id string,create_time string,amount float,uid string)
+row format delimited
+fields terminated by ',';指定分隔符为','
+
+内部表，通过hiveserver建的表，按照hive默认数据仓库目录放置 /user/hive/warehouse/数据库/表
+外部表，映射到hive中的目录
+
+建立外部表语法
+create external table t_access(ip string,url string,access_time string)
+row format delimited
+fields terminated by ','
+location '/access/log';
+
+删除内部表，元数据和数据目录都被清
+删除外部表，元数据删除，数据目录不删除
+
+分区表
+create table t_pv_log(ip string,url string,commit_time string)
+partitioned by(day string)
+row format delimited
+fields terminate by ','
+
+然后在hdfs目录里的表目录中加day=2017-09-16目录
+
+
+在hive客户端里导入数据到hdfs
+load data local inpath '/root/hivetest/pv.log' into table t_pv_log partition(day='20170915');
+如果文件不在本地而在hdfs中
+load data inpath '/access.log.2017-08-06.log' into table t_access partition(dt='20170806'); 但是hdfs中的文件会移动而不是复制
+
+分区表里就会有个伪字段 t_pv_log.day写着分区值
+所以，注意分区字段不能是表中已存在的字段
+
+如果想复制建立一个已存在的表
+create table t_pv_log_2 like t_pv_log;  建立的是空表
+
+create table t_pv_log_3
+as
+select * from t_pv_log where ip > '192.168.33.2';  建立的是带筛选数据的表，而且这时的原表分区字段会变成普通字段
+
+create table t_pv_log_4
+as
+select ip,url from t_pv_log; 新表只有两个字段且有数据
+

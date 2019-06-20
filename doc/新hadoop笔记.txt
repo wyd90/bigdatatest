@@ -1,0 +1,1944 @@
+mapreduce程序提交时要指定访问HDFS的用户
+运行jar包时设置jvm参数   -DHADOOP_USER_NAME=root
+在代码里设置jvm参数   System.setProperty("HADOOP_USER_NAME","root");
+
+--------------------------------------------------------------------------------------------------------------------
+
+在Linux里提交mapreduce到yarn集群
+hadoop jar wc.jar com.wyd.mr.wc.JobSubmitterOnLinu
+
+--------------------------------------------------------------------------------------------------------------------
+
+如何向map，reduce方法中传递参数？
+
+方法一、
+在jobSubmitter中设置参数，
+Configuration conf = new Configuration();
+        conf.setInt("topN",2);
+
+在mapoer或reducer里可以拿到该参数
+(context.getConfiguration()).getInt("topN",5)
+
+方法二、
+在resource中创建一个core-site.xml(或者新命名一个文件e.g. xx-oo.xml  conf.addResource("xx-oo.xml"))
+里面写
+<configuration>
+	<property>
+		<name>topN</name>
+		<value>2</value>
+	</property>
+</configuration>
+这样 Configuration conf = new Configuration();就可以加载到该配置
+
+-----------------------------------------------------------------------------------------------------------------
+
+在map或reduce中获取输入切片
+InputSplit inputSplit = context.getInputSplit();
+String filename = inputSplit.getPath().getName();
+
+InputSplit输入切片：
+	用于描述每个maptask所处理的数据任务范围
+
+如果maptask读的是文件
+	划分范围应该用如下信息描述：
+		文件路径、偏移量范围
+
+如果maptask读的是数据库
+	划分任务范围应该用如下信息描述
+		库名、表名、行范围
+
+----------------------------------------------------------------------------------------------------------------
+
+重要：需要注意的是
+reduec task提供的values迭代器，每次迭代返回的都是同一个对象，只是set的不同的值
+
+@Override
+        protected void reduce(Text key, final Iterable<OrderBean> values, Context context) throws IOException, InterruptedException {
+            List<OrderBean> list = new ArrayList<OrderBean>();
+            for(OrderBean orderBean : values) {
+                OrderBean newOrderBean = new OrderBean();
+                newOrderBean.set(orderBean.getOrderId(),orderBean.getUserId(),orderBean.getPdtName(),orderBean.getPrice(),orderBean.getNumber());
+                list.add(newOrderBean);
+            }
+
+        }
+
+--------------------------------------------------------------------------------------------------
+
+map中节省内存的写法
+		
+		//将key和orderbean先创建出来，每次set，context.write写同一个对象，但是是写到文件里，跟内存中的对象没关系了
+		OrderBean orderBean = new OrderBean();
+        Text k = new Text();
+
+        @Override
+        protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+            String[] split = value.toString().split(",");
+            orderBean.set(split[0],split[1],split[2],Float.parseFloat(split[3]),Integer.parseInt(split[4]));
+            k.set(split[0]);
+            context.write(k,orderBean);
+        }
+
+-----------------------------------------------------------------------------------------------------
+
+在reducer中，只要values iterator迭代一次，key就跟着变一次
+@Override
+        protected void reduce(HWOrder key, Iterable<NullWritable> values, Context context) throws IOException, InterruptedException {
+            Iterator<NullWritable> iterator = values.iterator();
+            int i = 0;
+            while(iterator.hasNext()){
+                NullWritable value = iterator.next();
+                context.write(key,value);
+                i ++;
+                if(i == 3) {
+                    break;
+                }
+            }
+
+        }
+
+----------------------------------------------------------------------------------------------------------------
+
+MR默认的输出数据类型为Text文件
+job.setOutputFormatClass(TextOutputFormat.class);
+可以设置为输出sequence文件
+job.setOutputFormatClass(SequenceFileOutputFormat.class);
+
+MR默认的输入数据类型为Text文件
+job.setInputFormatClass(TextInputFormat.class);
+可以设置为输入sequence文件
+job.setInputFormatClass(SequenceFileInputFormat.class);
+这样设置时
+mapper的输入的key，value就是sequence文件里存的k，v文件类型
+
+---------------------------------------------------------------------------------------------------------------
+
+自定义分区器
+    mapreduce在map task的环形缓冲区写入溢出文件时要用，合并分散的溢出文件时要用
+    reduce task在合并从各个map task中拉取的同区文件时要用
+
+public class OrderIdPartitioner extends Partitioner<HWOrder, NullWritable> {
+
+    @Override
+    public int getPartition(HWOrder hwOrder, NullWritable nullWritable, int i) {
+        return (hwOrder.getOrderId().hashCode() & Integer.MAX_VALUE) % i;
+    }
+}
+
+---------------------------------------------------------------------------------------------------------------
+
+自定义分组器
+    reduce task在迭代iterator时调用以区分不同组的key，一组调一次reduce方法
+
+public class OrderIdGroupingComparator extends WritableComparator {
+    
+    //告诉分组器输入key的类型
+    public OrderIdGroupingComparator() {
+        super(HWOrder.class, true);
+    }
+
+    @Override
+    public int compare(WritableComparable a, WritableComparable b) {
+        HWOrder o1 = (HWOrder)a;
+        HWOrder o2 = (HWOrder)b;
+        return o1.getOrderId().compareTo(o2.getOrderId());
+    }
+}
+
+----------------------------------------------------------------------------------------------------------------
+
+map task在执行时调用run方法，在run方法中，调用stepup方法，然后迭代调用map方法，最后调用cleanup方法
+
+----------------------------------------------------------------------------------------------------------------
+
+局部聚合，在map端
+job.setCombinerClass(Class<? extends Reducer> cls) 设置局部聚合类
+job.setCombinerKeyGroupingComparator(Class<? extends WritableComparator> cls) 设置局部聚合分组类
+
+---------------------------------------------------------------------------------------------------------------
+
+解决数据倾斜的办法
+    在map端分发key的时候，在key后面拼一个随机数，随机数的值是0到reduce的数量-1
+
+
+
+
+
+
+
+
+
+
+如果写入期间多个datanode同时发生故障，但非常少见，只要加入了dfs.namenode.reeplication.min=1就可以了（默认就是1）
+hdfs副本写入原则
+    hadoop默认在运行客户端的节点上放第一个复本，如果客户端运行在集群之外，就随机挑选一个节点，第二个复本放在与第一个复本不同且随机；另外选择的机架上，
+第三个复本放在与第2个复本同一个机架且随机选择的另一个节点上
+
+Path p = new Path("p");
+FSDataOutputStream out = fs.create(p);
+out.write("content".getBytes("UTF-8"));
+out.hflush(); //强制刷新到datanode
+out.close(); //其实也隐含执行了hf
+
+
+hadoop distcp dir1 dir2 #将dir1目录复制到dir2目录
+hadoop distcp -update dir1 dir2 #只更新有变化的文件
+hadoop distcp -delete dir1 dir2 #强行覆盖文件
+
+hadoop distcp -update -delete -p hdfs://namenode1/foo hdfs://namenode2/foo #跨集群复制
+distcp 是通过map完成的，-m可任意指定参加传输的map的数量，默认将近20个map参与传输
+
+yarn的三种调度器
+FIFO调度器
+fifo调度器按照提交的顺序运行应用（先进先出）
+
+容量调度器
+假设有队列
+root
+|--prod
+|__dev
+    |_eng
+    |_science
+创建capacity-scheduler.xmls文件
+<?xml version="1.0"?>
+<configuration>
+    <property>
+        <name>yarn.scheduler.capacity.root.queues</name>
+        <value>prod,dev</value>
+    </property>
+    <property>
+        <name>yarn.scheduler.capacity.root.dev.queues</name>
+        <value>eng.science</value>
+    </property>
+    <property>
+        <name>yarn.scheduler.capacity.root.prod.capacity</name>
+        <value>40</value>
+    </property>
+    <property>
+        <name>yarn.scheduler.capacity.root.dev.capacity</name>
+        <value>60</value>
+    </property>
+    <property>
+        <name>yarn.scheduler.capacity.root.dev.maximum-capacity</name>
+        <value>75</value>
+    </property>
+    <property>
+        <name>yarn.scheduler.capacity.root.dev.eng.capacity</name>
+        <value>50</value>
+    </property>
+    <property>
+        <name>yarn.scheduler.capacity.root.dev.science.capacity</name>
+        <value>50</value>
+    </property>
+</configuration>
+
+prod被设置成占队列资源的40%，dev被设置成占队列资源的60%
+dev中的eng和science分别占dev的50%资源
+dev资源可以在允许的情况下占用整个集群的75%资源
+
+mapreduce程序通过设置mapreduce.job.queuename来指定要使用的队列，如果不指定就使用default队列
+
+如果设置yarn.scheduler.capacity.<queue-path>.user-limit-factyor的值大于1（1为默认值），那么一个作业就可以使用超过其队列容量的资源
+
+
+公平调度器
+    公平调度器的定义
+    想象两个用户A和B，分别拥有自己的队列。A启动一个作业，在B没有需求时A会分配到全部可用资源；当A作业仍在运行时B启动了一个作业，一段时间后，A和B的两个
+作业会各占集群资源的一半；然后B启动第二个作业且其他作业扔在运行，那么B的第二个作业将和B的第一个各占整个集群资源的1/4，而A的作业占集群资源的一半
+
+如果要启用公平调度器
+修改yarn-site.xml中的yarn.reourcemanager.scheduler.class为org.apache.hadoop.yarn.server.reourcemanager.scheduler.fair.FairScheduler
+
+通过编写fair-scheduler.xml对公平调度器进行配置
+通过修改yarn.scheduler.fair.allocation.file来修改文件名
+
+vi fair-scheduler.xml
+<?xml version="1.0"?>
+<allocations>
+    <defaultQueueSchedulingPolicy>fair</defaultQueueSchedulingPolicy>
+    <queue name="prod">
+        <weight>40</weight>
+        <schedulingPolicy>fifo</schedulingPolicy>
+    </queue>
+
+    <queue name="dev">
+        <weight>60</weight>
+        <queue name="eng" />
+        <queue name="science" />
+    </queue>
+
+    <queuePlacementPolicy>
+        <rule name="specified" create="false" />
+        <rule name="primaryGroup" create="false" />
+        <rule name="default" queue="dev.eng" />
+    </queuePlacementPolicy>
+</allocations>
+
+这样配置表示prod和dev分配比例为40:60，eng和science平均分配dev的资源
+顶层的defaultQueueSchedulingPolicy元素表示使用公平调度器，默认也是
+prod队列内部使用fifo调度策略，dev队列内部使用公平调度策略
+
+queuePlacementPolicy元素是队列放置规则
+specified先匹配指定队列名，如果不指定就执行下一条规则匹配
+primaryGroup试着把应用放在用户的主Unix组名命名队列，如果没有这样的队列，继续下一条
+default是兜底规则，都不匹配，放dev.eng队列里
+
+如果省略queuePlacementPolicy，默认使用
+<queuePlacementPolicy>
+    <rule name="specified" />
+    <rule name="user" />
+</queuePlacementPolicy>
+先检查有没有指定，否则必要时以用户名为队列名创建队列
+
+也可以进行简单的设置
+<queuePlacementPolicy>
+    <rule name="default" />
+</queuePlacementPolicy>
+这个配置等价于在 yarn.scheduler.fair.user-as-default-queue=false
+
+
+抢占
+设置yarn-site.xml 
+yarn.scheduler.fair.preemption=true
+
+
+如果队列在指定时间内未获得被承诺的最小共享资源，调度器就会抢占其他容器
+fair-scheduler.xml文件顶层设置defaultMinSharePreemptionTimeout为所有队列设置超时时间
+minSharePreemption为单个队列指定超时时间
+
+如果队列在指定时间内获得的资源仍然低于其公平份额的一半，那么调度器就会抢占其他容器
+通过fair-scheduler.xml文件顶层设置defaultFairSharePreemptionTimeout为所有队列设置
+fairSharePreemptionTimeout为单个元素设置超时时间
+
+
+通过defaultFairSharePreemptionThreshold对所有队列
+fairSharePreemptionThreshold针对每个队列
+可以设置超时阀值，默认值事0.5
+
+延迟调度
+对于容器调度器
+设置yarn.scheduler.capacity.node-localitys-delay为正数，表示调度器放松节点限制、改为匹配同一机架上的其他节点前，准备错过的调度机会的数量
+
+对于公平调度器
+设置yarn.scheduler.fair.locality.threshold.node=0.5，表示调度器在接受同一机架上其他节点之前，将一直等待直到集群中的一半节点都已经给过调度机会
+设置yarn.scheduler.fair.locality.threshold.rack,表示在接受另一个机架替代所申请的机架之前需要等待的时长阀值，单位秒
+
+yarn默认使用内存资源计算公平性
+也可以使用drf计算公平性
+drf就是，假如有100个cpu和10TB内存的集群
+    应用A请求每分容器为2cpu和300G内存，A请求的资源在集群占比为2%和3%，A是内存主导的
+    应用B请求每个容器为6cpu和100G内存，B请求的资源在集群占比为6%和1%，B是cpu主导的
+这时根据drf，A和B的资源占比是3%和6%
+
+在容器调度中
+设置
+    <property>
+        <name>org.apache.hadoop.yarn.util.resource.DominantResourceCalculator</name>
+        <value>yarn.scheduler.capacity.resource-calculator</value>
+    </property>
+启用DRF
+
+在公平性调度器中
+    设置顶层元素
+    <defaultQueueSchedulingPolicy>为drf即可启用DRF
+
+-----------------------------------------
+
+HDFS数据完整性
+dfs.bytes-per-checksum 默认情况下为512字节，就是每512字节的数据会生成一个4字节的校验和，所以存储校验和的额外开销小于1%
+datanode在后台线程运行一个DataBlockScanner，定期去验证存储在这个datanode上的所有数据块
+
+客户端在使用open()方法读取文件之前，可以FileSystem.setVerifyChecksum(false)禁用读取校验
+命令行模式下haoop fs -get -ignoreCrc 或者 hadoop fs -copyToLocal 都可以禁用校验直接读取数据
+
+hadoop fs -checksum 来检查一个文件的校验和
+
+LocalFileSystem支持校验和
+如果写入时不想使用校验和使用 
+    FileSystem fs = new RawLocalFileSystem();
+    fs.initialize(null, conf);
+
+CheckdsumFileSystem可以
+    FileSystem rawFs = new ChecksumFileSystem(rawFs)
+或则设置配置全局配置文件
+fs.file.impl=org.apache.hadoop.fs.RawLocalFileSystem
+
+---------------------------------------------------------------------------
+
+使用hadoop URL读取hadoop的数据
+
+package com.sweetop.styhadoop;
+ 
+import org.apache.hadoop.fs.FsUrlStreamHandlerFactory;
+import org.apache.hadoop.io.IOUtils;
+ 
+import java.io.InputStream;
+import java.net.URL;
+ 
+/**
+ * Created with IntelliJ IDEA.
+ * User: lastsweetop
+ * Date: 13-5-31
+ * Time: 上午10:16
+ * To change this template use File | Settings | File Templates.
+ */
+public class URLCat {
+ 
+    static {
+        URL.setURLStreamHandlerFactory(new FsUrlStreamHandlerFactory());
+    }
+ 
+    public static void main(String[] args) throws Exception {
+        InputStream in = null;
+        try {
+            in = new URL(args[0]).openStream();
+            IOUtils.copyBytes(in, System.out, 4096, false);
+        } finally {
+            IOUtils.closeStream(in);
+        }
+    }
+}
+
+使用FileSystem API读取
+
+
+package com.sweetop.styhadoop;
+ 
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IOUtils;
+ 
+import java.io.InputStream;
+import java.net.URI;
+ 
+/**
+ * Created with IntelliJ IDEA.
+ * User: lastsweetop
+ * Date: 13-5-31
+ * Time: 上午11:24
+ * To change this template use File | Settings | File Templates.
+ */
+public class FileSystemCat {
+    public static void main(String[] args) throws Exception {
+        String uri=args[0];
+        Configuration conf=new Configuration();
+        FileSystem fs=FileSystem.get(URI.create(uri),conf);
+        InputStream in=null;
+        try {
+            in=fs.open(new Path(uri));
+            IOUtils.copyBytes(in, System.out, 4096, false);
+        }   finally {
+            IOUtils.closeStream(in);
+        }
+    }
+}
+
+FileSystem API读取文件的任意位置
+public class FileSystemDoubleCat {
+    public static void main(String[] args) throws Exception {
+        String uri = args[0];
+        Configuration conf = new Configuration();
+        FileSystem fs = FileSystem.get(URI.create(uri), conf);
+        FSDataInputStream in=null;
+        try {
+            in = fs.open(new Path(uri));
+            IOUtils.copyBytes(in, System.out, 4096, false);
+            in.seek(0);
+            IOUtils.copyBytes(in, System.out, 4096, false);
+        }   finally {
+            IOUtils.closeStream(in);
+        }
+    }
+}
+
+FSDataInputStream实现了PositionedReadable接口
+public interface PositionedReadable {
+    int read(long l, byte[] bytes, int i, int i1) throws java.io.IOException;
+    void readFully(long l, byte[] bytes, int i, int i1) throws java.io.IOException;
+    void readFully(long l, byte[] bytes) throws java.io.IOException;
+}
+
+从偏移量l开始读i1个字节到数组bytes的i位置处，返回读取了多少字节
+
+public class FileSystemPosReadCat{
+    public static void main(String[] args) throws Execption {
+        String uri = args[0];
+        Configuration conf = new Configuration();
+        FileSystem fs = FileSystem.get(URI.create(uri), conf);
+        FSDataInputStream in=null;
+        byte[] buffer = new byte[10] //创建长度为10的数组
+        try{
+            in = fs.open(new Path(uri));
+            in.read(0L,buffer,0,10);
+        } finally {
+            in.close();
+        }
+        
+    }
+}
+
+读取本地文件到hdfs
+package com.sweetop.styhadoop;
+ 
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IOUtils;
+import org.apache.hadoop.util.Progressable;
+ 
+import java.io.BufferedInputStream;
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.URI;
+ 
+/**
+ * Created with IntelliJ IDEA.
+ * User: lastsweetop
+ * Date: 13-6-2
+ * Time: 下午4:54
+ * To change this template use File | Settings | File Templates.
+ */
+public class FileCopyWithProgress {
+    public static void main(String[] args) throws Exception {
+        String localSrc = args[0];
+        String dst = args[1];
+ 
+        InputStream in = new BufferedInputStream(new FileInputStream(localSrc));
+ 
+        Configuration conf = new Configuration();
+        FileSystem fs = FileSystem.get(URI.create(dst), conf);
+        OutputStream out = fs.create(new Path(dst), new Progressable() {
+            @Override
+            public void progress() {
+                System.out.print(".");
+            }
+        });
+ 
+        IOUtils.copyBytes(in, out, 4096, true);
+    }
+}
+
+每次hafs调用progress()方法时，也就是每次将64KB数据包写入datanode管线后，打印一个时间点来显示整个运行过程
+
+FSDataOutputStream对象有一个getPos()方法，查询当前文件的位置
+
+查询HDFS文件的详细信息
+package com.sweetop.styhadoop;
+ 
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+ 
+import java.io.IOException;
+import java.net.URI;
+ 
+/**
+ * Created with IntelliJ IDEA.
+ * User: lastsweetop
+ * Date: 13-6-2
+ * Time: 下午8:58
+ * To change this template use File | Settings | File Templates.
+ */
+public class ShowFileStatus {
+ 
+    public static void main(String[] args) throws IOException {
+        Path path = new Path(args[0]);
+        Configuration conf = new Configuration();
+        FileSystem fs = FileSystem.get(URI.create(args[0]), conf);
+        FileStatus status = fs.getFileStatus(path);
+        System.out.println("path = " + status.getPath());
+        System.out.println("owner = " + status.getOwner());
+        System.out.println("block size = " + status.getBlockSize());
+        System.out.println("permission = " + status.getPermission());
+        System.out.println("replication = " + status.getReplication());
+    }
+}
+
+
+列出HDFS文件
+
+public void testLsDF() throws FileNotFoundException, IllegalArgumentException, IOException {
+        FileStatus[] listStatus = fs.listStatus(new Path("/")); //只访问本目录，不递归
+        for(FileStatus status : listStatus) {
+            System.out.println("文件路径："+status.getPath());
+            System.out.println(status.isDirectory()?"文件夹":"文件");
+            System.out.println("块大小："+status.getBlockSize());
+            System.out.println("文件长度："+status.getLen());
+            System.out.println("副本数量："+status.getReplication());
+            System.out.println("------------------------------");
+        }
+        
+    }
+
+package com.sweetop.styhadoop;
+ 
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.FileUtil;
+import org.apache.hadoop.fs.Path;
+ 
+import java.io.IOException;
+import java.net.URI;
+ 
+/**
+ * Created with IntelliJ IDEA.
+ * User: lastsweetop
+ * Date: 13-6-2
+ * Time: 下午10:09
+ * To change this template use File | Settings | File Templates.
+ */
+public class ListStatus {
+    public static void main(String[] args) throws IOException {
+        String uri = args[0];
+        Configuration conf = new Configuration();
+        FileSystem fs = FileSystem.get(URI.create(uri), conf);
+ 
+        Path[] paths = new Path[args.length];
+        for (int i = 0; i < paths.length; i++) {
+            paths[i] = new Path(args[i]);
+        }
+ 
+        FileStatus[] status = fs.listStatus(paths);
+        Path[] listedPaths = FileUtil.stat2Paths(status);
+        for (Path p : listedPaths) {
+            System.out.println(p);
+        }
+    }
+}
+
+
+HDFS筛选
+public FileStatus[] FileSystem.globStatus(Path pathPattern) throws IOException
+public FileStatus[] FileSystem.globStatus(Path pathPattern, PathFilter filter)
+
+pathPattern可以支持Unix bash shell
+假如有如下数据
+|____2007/
+|      |_12/
+|         |_30/
+|         |_31/
+|
+|____2008/
+       |__01/
+           |_01/
+           |_02/
+
+/*代表  /2007     /2008
+/*/*代表 /2007/12   /2008/01
+/*/12/*代表  /2007/12/30   /2007/12/31
+
+PathFilter还可以通过编程精确控制过滤
+
+先实现PathFilter接口
+package com.sweetop.styhadoop;
+ 
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.fs.PathFilter;
+ 
+/**
+ * Created with IntelliJ IDEA.
+ * User: lastsweetop
+ * Date: 13-6-3
+ * Time: 下午2:49
+ * To change this template use File | Settings | File Templates.
+ */
+public class RegexExludePathFilter implements PathFilter {
+ 
+    private final String regex;
+ 
+    public RegexExludePathFilter(String regex) {
+        this.regex = regex;
+    }
+ 
+    @Override
+    public boolean accept(Path path) {
+        return !path.toString().matches(regex);
+    }
+}
+再继承接口
+
+package com.sweetop.styhadoop;
+ 
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.FileUtil;
+import org.apache.hadoop.fs.Path;
+ 
+import java.io.IOException;
+import java.net.URI;
+ 
+/**
+ * Created with IntelliJ IDEA.
+ * User: lastsweetop
+ * Date: 13-6-3
+ * Time: 下午2:37
+ * To change this template use File | Settings | File Templates.
+ */
+public class GlobStatus {
+    public static void main(String[] args) throws IOException {
+        String uri = args[0];
+        Configuration conf = new Configuration();
+        FileSystem fs = FileSystem.get(URI.create(uri), conf);
+ 
+        FileStatus[] status = fs.globStatus(new Path(uri),new RegexExludePathFilter("^.*/1901"));
+        Path[] listedPaths = FileUtil.stat2Paths(status);
+        for (Path p : listedPaths) {
+            System.out.println(p);
+        }
+    }
+}
+
+压缩和解压缩HDFS中的文件
+public class StreamCompressor {
+    public static void main(String[] args) throws Exception {
+        String uri = args[0];
+        Configuration conf = new Configuration();
+        FileSystem fs = FileSystem.get(URI.create(uri), conf);
+        OutputStream outputStream = fs.create(new Path(uri), new Progressable() {
+            @Override
+            public void progress() {
+                System.out.print(".");
+            }
+        });
+
+        CompressionCodecFactory ccf = new CompressionCodecFactory(conf);
+        CompressionCodec codec = ccf.getCodecByClassName(GzipCodec.class.getName());
+        OutputStream out = codec.createOutputStream(outputStream);
+
+        IOUtils.copyBytes(System.in, out, 4096, false);
+
+        out.finish();
+    }
+}
+
+把HDFS中的压缩文件通过判断扩展名解压到HDFS上
+public class FileDecompressor {
+    public static void main(String[] args) throws Exception {
+        String uri = args[0];
+        Configuration conf = new Configuration();
+        FileSystem fs = FileSystem.get(URI.create(uri), conf);
+
+        Path inputPath = new Path(uri);
+        CompressionCodecFactory factory = new CompressionCodecFactory(conf);
+        CompressionCodec codec = factory.getCodec(inputPath);
+        if(codec == null) {
+            System.err.println("No codec found for "+uri);
+            System.exit(1);
+        }
+
+        String outputUri = CompressionCodecFactory.removeSuffix(uri,codec.getDefaultExtension());
+
+        InputStream in = null;
+        OutputStream out = null;
+
+        try{
+            in = codec.createInputStream(fs.open(inputPath));
+            out = fs.create(new Path(outputUri));
+            IOUtils.copyBytes(in,out,conf);s
+        } finally {
+            IOUtils.closeStream(in);
+            IOUtils.closeStream(out);
+        }
+    }
+}
+
+可以通过配置文件中io.compression.codecs加载自己的定制，默认是空的
+
+使用压缩池从标准输入接受数据并压缩后写到标准输出
+public class PooledStreamCompressor{
+    public static void main(String[] args) throws Exception {
+        String codecClassname = args[0];
+        Class<?> codecClass = Class.forName(codecClassname);
+        Configuration conf = new Configuration();
+        CompressionCodec codec = (CompressionCodec)ReflectionUtils.newInstance(codecClass, conf);
+        
+        Compressor compressor = null;
+        try{
+            compressor = CodecPool.geetCompreessor(codec);
+            codec.createOutputsStream(System.out, compressor);
+            IOUtils.copyBytes(System.in, out, 4096, false);
+            out.finish();
+        } finally {
+            CodecPool.returnCompressor(compressor);
+        }
+    }
+}
+
+MapReduce程序使用压缩进行输出
+public class MaxTemperatureWithCompreession{
+    public static void main(String[] args) throws IOException {
+        if(args.length != 2) {
+            System.exit(-1);
+        }
+
+        Job job = new Job();
+        job.setJarByClasss(MaxTemperature.class);
+        FileInputFormat.addInputPath(job, new Path(args[0]));
+        FileOutputFormat.setOutputPath(job, new Path(args[1]));
+
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(IntWritable.class);s
+
+        FileOutputFormat.setCompressOutput(job,true);
+        FileOutputFormat.setOutputCompressorClass(job, GzipCodec.class);
+
+        job.setMapperClass(MaxTemperatureMapper.class);
+        job.setCombinerClass(MaxTemperatureReducer.class);
+        job.setReducerClass(MaxTemperatureReducer.class);
+
+        System.exit(job.waitForCompletion(true) ? 0 : 1);
+    }
+}
+
+在作业中启用map中间结果压缩
+Configuration conf = new Configuration();
+conf.setBoolean(Job.MAP_OUTPUT_COMPRESS, true);
+conf.setClass(Job.MAP_OUTPUT_COMPRESS_CODEC, GzipCodec.class);
+Job job = new Job(conf);
+
+--------------------------------------
+
+VintWritable变长格式序列号类
+VlongWritable变长格式序列号类
+
+FileSystem写入SequenceFile
+
+public class SequenceFileWriteDemo {
+    private static final String[] DATA = {
+    "One, two, buckle my shoe",
+    "Three, four, shut the door",
+    "Five, six, lay pick up sticks",
+    "Seven, eight, lay them straight",
+    "Nine, ten, a big fat hen"
+    };
+    public static void main(String[] args) throws IOException {
+        String uri = args[0];
+        Configuration conf = new Configuration();
+        FileSystem fs = FileSystem.get(URI.create(uri), conf);
+        Path path = new Path(uri);
+
+        IntWritable key = new IntWritable();
+        Text value = new Text();
+        SequenceFile.Writer writer = null;
+
+        try{
+            writer = SequenceFile.createWriter(fs, conf, path, key.getClass(), value.getClass());
+            for(int i =0; i < 100; i++){
+                key.set(100-i);s
+                value.set(DATA[i%DATA.length]);
+                System.out.printf(""+writer.getLength()+"=="+key"+"=="+value);
+                writer.append(key,value);
+            }
+        }finally{
+            IOUtils.closeStream(writer);
+        }
+    }
+}
+
+
+FileSystem读取SequenceFile
+
+public class SequenceFileReadDemo {
+    public static void main(String[] args) throws IOExceptions {
+        String uri = args[0];
+        Configuration conf = new Configuration();
+        FileSystem fs = FileSystem.get(URI.create(uri), conf);
+        Path path = new Path(uri);
+
+        SequenceFile.Reader reader = null;
+        try{
+            reader = new SequenceFile.Reader(fs, path, conf);
+            Writable key = (Writable)ReflectionUtils.newInstance(reader.getKeyClass(), conf);
+            Writable value = (Writable)ReflectionUtils.newInstance(reader.getValueClass(), conf);
+
+            long position = reader.getPosition();s
+            while(reader.next(key, value)){  //如果返回false，就说明读完了
+                String syncSeen = reader.syncSeen();
+                System.out.println(""+position+"=="+syncSeen+"=="+key+"=="+value);
+                position = reader.getPosition();
+            }
+        } finally{
+            IOUtils.closeStream(reader);
+        }
+    }
+}
+
+SequenceFile.Reader reader 还有seek方法
+reader.seek(359);
+reader.next(key, value);
+如果设置超过边界，next方法会报错
+
+reader.sync(long position) //通过同步点查找记录边界
+将读取位置定位到记录点之后的下一个同步点，如果position之后没有同步了，那么当前读取位置将指向文件末尾
+
+hadoop fs -text 可以读取sequence文件，如果key或value有自己定义的类，要确保类文件在hadoop类路径下
+
+=================================================================================================
+
+hadoop fs -copyFromLocal 本地路径 上传路径
+等价于 hadoop fs -put 
+
+hadoop fs -appendToFile 本地路径，上传路径
+
+
+core-deflaut.xml中要注意的几个配置
+fs.defaultFS=file:///     //文件系统
+dfs.replication=3         //副本数
+hadoop.tmp.dir=/tmp/hadoop-${user.name}  //hadoop的base工作目录
+
+
+hdfs-deflaut.xml中要注意的几个配置
+dfs.namenode.checkpoint.dir=file://${hadoop.tmp.dir}/dfs/namesecondary   //secondarynamenode存放临时镜像的地方
+dfs.namenode.name.dir=file://${hadoop.tmp.dir}/dfs/name
+dfs.datanode.data.dir=file://${hadoop.tmp.dir}/dfs/data
+
+改变hdfs文件的或目录的权限 hadoop fs -chmod 777 /user/root
+
+shell查看hdfs conf的命令
+hdfs getconf 
+hdfs-default.xml中
+dfs.namenode.fs-limits.min-block-size=1048576 表示最小块设置
+配置hadoop的最小blocksize必须是512的倍数，因为在写入期间要进行校验，是512字节一校验
+
+配置辅助名称节点
+[hdfs-site.xml]
+dfs.namenode.secondary.http-address=node2:50090
+
+查看名称节点的镜像文件
+hdfs oiv -i fsimage_0000000000000075395 -o a.xml -p XML
+查看名称节点编辑文件
+hdfs oev -i edits_0000000000000075692-0000000000000075693 -o output.xml -p XML
+
+手动对编辑日志进行滚动
+hdfs dfsadmin -rollEdits
+
+启动hdfs时，镜像文件和编辑日志进行融合，同时编辑日志进行滚动
+
+hdfs安全模式
+hdfs dfsadmin -safemode <enter|leave|get|wait|forceExit>
+
+hdfs dfsadmin -safemode wait
+hdfs dfs -rmr a.txt   //如果删除操作遇到hdfs在删除模式的时候，会等待安全模式推出后进行
+
+
+对镜像进行保存
+先需要进行安全模式
+hdfs dfsadmin -saveNamespace
+
+hadoop checknative //检查hadoop安装的压缩库
+hadoop classpath   //查看hadoop的类路径
+
+-----------------------------------------------------------------
+
+hdfs配额管理（限制文件夹下文件数量）
+hdfs dfsadmin -setQuota 
+
+hdfs dfsadmin -setQuota 1 /testQuota/data  设置文件夹为空，文件夹占一个配额
+hadoop dfsadmin -clrQuota /user/seamon //清除配额
+
+hdfs dfsadmin -setSpaceQuota(限制文件夹下所有文件的大小总和，副本也计算在内)
+例如有个文件为128M，3副本，就是384M，小于386M的配额就不能添加进去
+
+hdfs dfsadmin -setSpaceQuota <字节数> /user/root
+
+hadoop dfsadmin -clrSpaceQuota //清除配额
+
+-----------------------------------------------------------------
+
+hdfs快照管理（针对目录的）
+迅速对文件夹进行备份，不产生文件，使用差值存储
+默认是禁用快照，要先启用快照
+hdfs dfsadmin -allowSnapShot /testQuota/data  //启用快照
+hdfs dfsadmin -disallowSnapshot /testQuota/data //禁止快照
+
+hadoop fs -createSnapshot /testQuota/data ss1
+                                          快照名
+
+hadoop fs -deleteSnapshot <snapshotDir> <snapshotName>
+hadoop fs -renameSnapshot <snapshotDir> <oldName> <newName>
+
+-----------------------------------------------------------------
+
+hadoop节点服役和退役
+首先要在namenode节点上的hdfs-site.xml文件上添加白名单和黑名单
+<property>
+  <!-- 白名单信息-->
+  <name>dfs.hosts</name>
+  <value>/home/hadoop/hadoop/etc/dfs.include</value>
+</property>
+<property>
+  <!-- 黑名单信息-->
+  <name>dfs.hosts.exclude</name>
+  <value>/home/hadoop/hadoop/etc/dfs.exclude</value>
+</property>
+
+添加新节点
+第一步
+vi dfs.include
+node1
+node2
+node3
+node4
+node5
+node6 #增加新节点node6
+第二步
+hdfs dfsadmin -refreshNodes
+yarn rmadmin -refreshNodes
+第三步 所有节点的slaves文件添加node6
+第四步 在新节点启动datanode
+hadoop-daemon.sh start datanode
+
+退役节点
+添加黑名单
+第一步
+vi dfs.exclude
+添加要下线的点
+node6
+这时白名单中不要删除
+
+第二步
+hdfs dfsadmin -refreshNodes
+yarn rmadmin -refreshNodes
+
+第三步
+查看webui，节点状态在decommisstion in progress. 正在下线节点
+当所有的要退役的节点都报告为Decommissioned,数据转移工作已经完成
+
+第四步
+从白名单删除节点s
+
+第五步
+再次运行
+hdfs dfsadmin -refreshNodes
+yarn rmadmin -refreshNodes
+
+第六步
+从所有slaves文件中删除退役节点
+
+
+
+
+黑白名单的组合情况
+-------------------------
+include     //dfs.include
+exclude     //dfs.hosts.include
+
+include     exclude     Interpretation
+No          No          不能连接
+No          Yes         不能连接
+Yes         No          可以连接
+Yes         Yes         可以连接,将会退役状态。
+
+
+数据节点datanode配置文件配置数据存储目录可以配置多个目录，多个目录是扩容关系，名称节点如果两个目录是并行关系
+<property>
+    <name>dfs.datanode.data.dir</name>
+    <value>file:///home/centos/hadoop/dfs/data1,file:///home/centos/hadoop/dfs/data2<value>
+</property>
+
+HDFS写入过程
+将数据写入本地缓冲区，当缓冲区已满，写入数据包
+数据包的组成是64K(65016 + 33校验数据) = 65049
+
+数据有126个chunksPerPacket
+每个chunk=512+4 = 原生数据512 + 校验和4
+
+包的组成是
+  头33       |      校验和 4*126            |   数据 512 * 126
+-----------------------------------------------------------------
+
+hdfs压缩，不可切割的压缩适用于 多个小文件一起合成一个压缩后不大于128M的文件，这样会在一个map里解压
+
+
+
+------------------------------------------------------------------
+
+centos远程调试
+//windwos
+//set JAVA_OPTS=%JAVA_OPTS% -agentlib:jdwp=transport=dt_socket,address=8888,server=y,suspend=n
+
+export HADOOP_CLIENT_OPTS=-agentlib:jdwp=transport=dt_socket,address=8888,server=y,suspend=y
+hadoop jar HdfsDemo.jar com.wyd.CompressDemo
+
+server启动暂挂8888
+
+idea edit Configuration 新建Remote
+
+使用snappy压缩
+安装snappy库
+yum search snappy
+yum install -y snappy.x86_64
+
+使用lzo压缩
+在项目pom文件中添加
+<!-- https://mvnrepository.com/artifact/org.anarres.lzo/lzo-hadoop -->
+<dependency>
+    <groupId>org.anarres.lzo</groupId>
+    <artifactId>lzo-hadoop</artifactId>
+    <version>1.0.6</version>
+    <scope>test</scope>
+</dependency>
+在centos上安装lzo
+yum -y install lzo
+
+------------------------------------------------------
+SequenceFile
+key可以重复
+@Test
+    public void save() throws IOException, InterruptedException {
+        Configuration conf = new Configuration();
+        conf.set("fs.defaultFS","hdfs://node2:9000");
+
+        FileSystem fs = FileSystem.get(URI.create("hdfs://node2:9000"), conf, "root");
+
+        SequenceFile.Writer writer = SequenceFile.createWriter(fs, conf, new Path("a.seq"), IntWritable.class, Text.class);
+
+        writer.append(new IntWritable(1), new Text("hello world tom"));
+        writer.append(new IntWritable(2), new Text("tom jack hello"));
+        IOUtils.closeStream(writer);
+
+    }
+
+    @Test
+    public void read() throws IOException, InterruptedException {
+        Configuration conf = new Configuration();
+        conf.set("fs.defaultFS","hdfs://node2:9000");
+
+        FileSystem fs = FileSystem.get(URI.create("hdfs://node2:9000"), conf, "root");
+
+        SequenceFile.Reader reader = new SequenceFile.Reader(fs, new Path("a.seq"), conf);
+
+        IntWritable key = new IntWritable();
+        Text value = new Text();
+        while (reader.next(key, value)){
+            System.out.println(reader.getPosition()+" "+key.toString()+" "+value.toString());
+        }
+
+        IOUtils.closeStream(reader);
+    }
+
+
+
+sequenceFile文件有同步点
+
+writer.sync(); //手动添加同步点
+reader.sync(288); //定位到同步点 
+
+序列文件是可切割的
+    因为有同步点
+
+压缩
+block压缩模式，key，value都压缩
+SequenceFile.Writer writer = SequenceFile.createWriter(fs, conf, new Path("a.seq.gzip"), IntWritable.class, Text.class, SequenceFile.CompressionType.BLOCK, new GzipCodec())
+
+RECORD压缩模式 只压缩value
+SequenceFile.Writer writer = SequenceFile.createWriter(fs, conf, new Path("a.seq.gzip"), IntWritable.class, Text.class, SequenceFile.CompressionType.RECORD, new GzipCodec());
+
+-----------------------------------------------------------
+MapFile
+key-value
+key必须有序写入，排序后写入，按照升序列
+key可重复
+对应一个目录，目录下有索引文件index，和数据文件data
+
+------------------------------------------------------------------
+
+mapreduce的输入输出
+
+InputFormat 默认使用 TextInputFormat
+OutputFormat 默认使用 TextOutputFormat
+
+job.setInputFormatClass(SequenceFileInputFormat.class)
+job.setOutputFormatClass(SequenceFileOutputFormat.class);
+
+---------------------------------------------------------------------
+
+mr自定义分区
+继承Partitioner，实现getPartition方法
+在提交方法里设置job.setPartitionClass(MyPartitioner.class)
+
+-----------------------------------------------------------------------
+
+job.setCombinerClass(),map端化解，减少shuffle的网络传输
+先运行分区，后运行combiner
+
+------------------------------------------------------------------------
+
+多种格式文件共存的情况
+file:///mr/seq
+file:///mr/txt
+有两个文件夹
+需要用
+MultiInputs
+
+public static void main(String[] args) throws IOException, ClassNotFoundException, InterruptedException {
+        Configuration conf = new Configuration();
+        Job job = Job.getInstance(conf);
+
+        job.setJobName("multipleInputs");
+        job.setJarByClass(WCDemo.class);
+
+        MultipleInputs.addInputPath(job, new Path("file:///mr/seq"), SequenceFileInputFormat.class,WordCountsSeqMapper.class);
+        MultipleInputs.addInputPath(job, new Path("file:///mr/txt"), TextInputFormat.class, WordCountsMapper.class);
+
+        FileOutputFormat.setOutputPath(job, new Path("file:///mr/out"));
+
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(IntWritable.class);
+
+        job.setReducerClass(WordCountsReducer.class);
+
+        job.waitForCompletion(true);
+
+    }
+
+-------------------------------------------------------------------------------------
+
+hadoop的日志在hadoop-2.8.5/logs目录下
+用户自己打印的日志在hadoop-2.8.5/logs/userlogs目录下
+
+-------------------------------------------------------------------------------------------
+
+mapreduce计数器
+context.getCounter("r","WCReduceer.reduce").increment(1);
+                   计数器组名  计数器名            加1
+计数器初始值是0，如果没有会自动创建
+public static class WordCountMapper extends Mapper<LongWritable, Text,Text, IntWritable> {
+        @Override
+        protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+            String line = value.toString();
+            String[] words = line.split(" ");
+            for(String word : words){
+                context.write(new Text(word),new IntWritable(1));
+                context.getCounter("m","WordCountMapper.map").increment(1);
+            }
+        }
+    }
+
+    public static class WordCountReducer extends Reducer<Text, IntWritable, Text, IntWritable> {
+        @Override
+        protected void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
+            int i = 0;
+            for(IntWritable v : values){
+                i++;
+            }
+            context.write(key, new IntWritable(i));
+            context.getCounter("r","WordCountReducer.reduce").increment(1);
+        }
+    }
+
+在日志里会出现
+...
+Shuffle Errors
+        BAD_ID=0
+        CONNECTION=0
+        IO_ERROR=0
+        WRONG_LENGTH=0
+        WRONG_MAP=0
+        WRONG_REDUCE=0
+    m
+        WordCountMapper.map=22
+    File Input Format Counters 
+        Bytes Read=143
+    File Output Format Counters 
+        Bytes Written=87
+    r
+        WordCountReducer.reduce=10
+
+--------------------------------------------------------------------------------
+
+hadoop采样器
+    通过采样器生成分区文件，结合Hadoop的TotalOrderPartitioner进行分区划分
+    TotalOrderPartitioner
+    InputSampler会根据数据量进行采样
+需使用sequenceFile
+生成数据的代码
+
+package com.wyd.hdfs;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IOUtils;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.SequenceFile;
+import org.apache.hadoop.io.Text;
+
+import java.io.IOException;
+import java.net.URI;
+import java.util.Random;
+
+public class GenerateTeempMaxData {
+    public static void main(String[] args) throws IOException, InterruptedException {
+        Configuration conf = new Configuration();
+        conf.set("fs.defaultFS","file:///");
+
+        FileSystem fs = FileSystem.get(URI.create("file:///"), conf, "root");
+
+        SequenceFile.Writer writer = SequenceFile.createWriter(fs, conf, new Path("/Users/wangyadi/yarnData/mr/input/a.seq"), IntWritable.class, IntWritable.class);
+        for(int i =0; i < 60000; i++){
+            int year = 1970 + new Random().nextInt(100);
+            int temp = -30 + new Random().nextInt(100);
+
+            writer.append(new IntWritable(year), new IntWritable(temp));
+        }
+
+        IOUtils.closeStream(writer);
+
+    }
+}
+
+使用TotalOrderPartitioner全排序分区类
+和InputSampler采样器采样数据
+package com.wyd.mr.temp;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.input.SequenceFileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.mapreduce.lib.partition.InputSampler;
+import org.apache.hadoop.mapreduce.lib.partition.TotalOrderPartitioner;
+
+import java.io.IOException;
+
+public class MaxTemp {
+    public static class MaxTempMapper extends Mapper<IntWritable, IntWritable, IntWritable, IntWritable> {
+        @Override
+        protected void map(IntWritable key, IntWritable value, Context context) throws IOException, InterruptedException {
+            context.write(key, value);
+        }
+    }
+
+    public static class MaxTempReducer extends Reducer<IntWritable, IntWritable, IntWritable, IntWritable>{
+        @Override
+        protected void reduce(IntWritable key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
+            int max = Integer.MIN_VALUE;
+            for(IntWritable v : values){
+                if(max < v.get()){
+                    max = v.get();
+                }
+            }
+            context.write(key, new IntWritable(max));
+        }
+
+    }
+
+    public static void main(String[] args) throws IOException, ClassNotFoundException, InterruptedException {
+        Configuration conf = new Configuration();
+        Job job = Job.getInstance(conf);
+        job.setJobName("MaxTemp");
+
+        job.setInputFormatClass(SequenceFileInputFormat.class);
+
+        job.setJarByClass(MaxTemp.class);
+        job.setMapperClass(MaxTempMapper.class);
+        job.setReducerClass(MaxTempReducer.class);
+
+        job.setOutputKeyClass(IntWritable.class);
+        job.setOutputValueClass(IntWritable.class);
+
+        job.setNumReduceTasks(3);
+
+        FileInputFormat.addInputPath(job, new Path("/Users/wangyadi/yarnData/mr/input/a.seq"));
+        FileOutputFormat.setOutputPath(job, new Path("/Users/wangyadi/yarnData/mr/output"));
+
+        //设置全排序分区类
+        job.setPartitionerClass(TotalOrderPartitioner.class);
+        TotalOrderPartitioner.setPartitionFile(conf, new Path("file:///Users/wangyadi/yarnData/mr/par/par.lst"));
+
+        //创建随机采样器对象
+        //freq每个key被选中的概率
+        //numSamplesc抽取样本的总数
+        //maxSplitsSampled划分的分区数
+        InputSampler.RandomSampler<IntWritable, IntWritable> sampler = new InputSampler.RandomSampler<IntWritable, IntWritable>(0.1, 1000, 3);
+
+        //写入分区文件
+        InputSampler.writePartitionFile(job, sampler);
+
+
+
+
+
+        job.waitForCompletion(true);
+    }
+
+------------------------------------------------------------------------------------------
+
+job.getInstance(conf)会对conf的所有参数进行一个拷贝
+如果程序中再修改conf对象的值，不会对job生效
+要用job.getConfiguration()得到作业的conf
+
+--------------------------------------------------------------------------------------------------
+
+KeyValueTextInputFormat
+是文本文件，但是内容是key  value形式的文件中间是/t制表符
+
+---------------------------------------------------------------------------------------------
+
+job.setSortComparatorClass(KeyComparator.class);
+package com.wyd.mr.secordarysort;
+
+import org.apache.hadoop.io.WritableComparable;
+import org.apache.hadoop.io.WritableComparator;
+
+public class KeyComparator extends WritableComparator {
+    public KeyComparator() {
+        super(ComboKey.class, true);
+    }
+
+    @Override
+    public int compare(WritableComparable a, WritableComparable b) {
+        ComboKey o1 = (ComboKey) a;
+        ComboKey o2 = (ComboKey) b;
+        if(o1.getYear() - o2.getYear() == 0){
+            return o1.getTemp() - o2.getTemp();
+        } else {
+            return o1.getYear() - o2.getYear();
+        }
+    }
+}
+可以覆盖map排序的时候用的key的本身的compare方法
+
+----------------------------------------------------------------------------
+
+mapreduce环形数据缓冲区配置
+mapred-default.xml
+
+mapreduce.task.io.sort.mb=100   //缓冲区大小
+mapreduce.map.sort.spill.percent=0.8  //溢出比例
+
+---------------------------------------------------------------------------------
+
+mapreduce分隔符配置
+mapreduce.input.keyvaluelinerecordreader.key.value.separator
+
+job.setInputFormatClass(KeyValueTextInputFormat.class); //分本格式的keyvalue
+
+---------------------------------------------------------------------------------
+
+mapreduce数据处理链条
+
+例子场景
+    第一个map读入文本文件切割单词 --> 第二个map读第一个map的输出然后过滤敏感词 --> reducer聚合计算wordcount --> reducer端的map过滤掉单词技术少于5的单词
+
+map端可以有一个或多个map组成  reducer端只能有一个reducer然后后面可以跟多个map或者不跟map
+
+package com.wyd.mr.chain;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.chain.ChainMapper;
+import org.apache.hadoop.mapreduce.lib.chain.ChainReducer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.input.KeyValueTextInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+
+import java.io.IOException;
+
+public class ChainDemo {
+
+    public static class WcMapper1 extends Mapper<LongWritable, Text, Text, IntWritable>{
+
+        private Text keyOut;
+
+        private IntWritable vOut;
+
+        @Override
+        protected void setup(Context context) throws IOException, InterruptedException {
+            keyOut = new Text();
+            vOut = new IntWritable(1);
+        }
+
+        @Override
+        protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+            String[] arr = value.toString().split(" ");
+            for(String k:arr){
+                keyOut.set(k);
+                context.write(keyOut, vOut);
+            }
+        }
+    }
+
+    public static class WcMapper2 extends Mapper<Text, IntWritable, Text, IntWritable>{
+        @Override
+        protected void map(Text key, IntWritable value, Context context) throws IOException, InterruptedException {
+            String word = key.toString();
+            if(!"iis".equals(word)){
+                context.write(key, value);
+            }
+        }
+    }
+
+    public static class WcReducer extends Reducer<Text, IntWritable, Text, IntWritable>{
+        @Override
+        protected void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
+
+            int count = 0;
+            for (IntWritable value: values){
+                count = count + value.get();
+            }
+            context.write(key, new IntWritable(count));
+
+        }
+    }
+
+    public static class WcReducerMapper1 extends Mapper<Text, IntWritable, Text, IntWritable>{
+        @Override
+        protected void map(Text key, IntWritable value, Context context) throws IOException, InterruptedException {
+            int num = value.get();
+            if(num > 5){
+                context.write(key, value);
+            }
+        }
+    }
+
+    public static void main(String[] args) throws IOException, ClassNotFoundException, InterruptedException {
+        Configuration conf = new Configuration();
+        Job job = Job.getInstance(conf);
+
+        job.setJobName("chainDemo");
+        job.setJarByClass(ChainDemo.class);
+
+        job.setInputFormatClass(KeyValueTextInputFormat.class);
+
+        FileInputFormat.addInputPath(job, new Path(""));
+        FileOutputFormat.setOutputPath(job, new Path(""));
+
+
+        ChainMapper.addMapper(job,WcMapper1.class,LongWritable.class,Text.class,Text.class,IntWritable.class,conf);
+        ChainMapper.addMapper(job,WcMapper2.class,Text.class,IntWritable.class,Text.class,IntWritable.class,conf);
+
+        ChainReducer.setReducer(job,WcReducer.class,Text.class,IntWritable.class,Text.class,IntWritable.class,conf);
+        ChainReducer.addMapper(job, WcReducerMapper1.class, Text.class,IntWritable.class, Text.class, IntWritable.class,conf);
+
+        job.setNumReduceTasks(3);
+
+        job.waitForCompletion(true);
+    }
+
+}
+
+-------------------------------------------------------------------------------------------
+
+FileInputFormat
+    获取切片集合
+    子类都要重写方法isSplittable()
+    负责创建RecordReader对象
+    设置IO路径
+RecordReader
+    负责从InputSplit中读取keyvalue对
+
+---------------------------------------------------------------------------------------------
+
+mapreduce读数据库，写数据库
+默认两个切片，这是conf里的默认配置
+package com.wyd.mr.db;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.NullWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.db.DBConfiguration;
+import org.apache.hadoop.mapreduce.lib.db.DBInputFormat;
+import org.apache.hadoop.mapreduce.lib.db.DBOutputFormat;
+
+import java.io.IOException;
+
+public class DBWordCount {
+    public static class DBWordCountMapper extends Mapper<LongWritable, MyDBWritable, Text, IntWritable>{
+        @Override
+        protected void map(LongWritable key, MyDBWritable value, Context context) throws IOException, InterruptedException {
+            String[] arr = value.getTxt().toString().split(" ");
+            for (String str : arr){
+                context.write(new Text(str), new IntWritable(1));
+            }
+        }
+    }
+
+    public static class DBWordCountReducer extends Reducer<Text, IntWritable, DBOutWritable, NullWritable>{
+
+        @Override
+        protected void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
+            int count = 0;
+            for(IntWritable w : values){
+                count = count + w.get();
+            }
+            DBOutWritable out = new DBOutWritable();
+            out.setWord(key.toString());
+            out.setCnts(count);
+
+            context.write(out, NullWritable.get());
+        }
+
+    }
+
+    public static void main(String[] args) throws IOException, ClassNotFoundException, InterruptedException {
+        Configuration conf = new Configuration();
+        Job job = Job.getInstance(conf);
+
+        job.setJobName("dbWordCount");
+        job.setJarByClass(DBWordCount.class);
+
+        DBConfiguration.configureDB(job.getConfiguration(), "com.mysql.jdbc.Driver", "jdbc:mysql://node3:3306/bigdata", "root", "az63091919");
+        DBInputFormat.setInput(job, MyDBWritable.class, "select id,name,txt from words", "select count(*) from words");
+
+        DBOutputFormat.setOutput(job, "wordcount", "word","cnts");
+
+        job.setMapperClass(DBWordCountMapper.class);
+        job.setReducerClass(DBWordCountReducer.class);
+
+        job.setMapOutputKeyClass(Text.class);
+        job.setMapOutputValueClass(IntWritable.class);
+
+        job.setOutputKeyClass(LongWritable.class);
+        job.setOutputValueClass(MyDBWritable.class);
+
+        job.waitForCompletion(true);
+    }
+
+}
+
+定义输入和输出的类
+package com.wyd.mr.db;
+
+import org.apache.hadoop.io.Writable;
+import org.apache.hadoop.mapreduce.lib.db.DBWritable;
+
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
+public class MyDBWritable implements DBWritable, Writable {
+
+    private Long id;
+
+    private String name;
+
+    private String txt;
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public String getTxt() {
+        return txt;
+    }
+
+    public void setTxt(String txt) {
+        this.txt = txt;
+    }
+
+    public void write(DataOutput dataOutput) throws IOException {
+        dataOutput.writeLong(id);
+        dataOutput.writeUTF(name);
+        dataOutput.writeUTF(txt);
+    }
+
+    public void readFields(DataInput dataInput) throws IOException {
+        id = dataInput.readLong();
+        name = dataInput.readUTF();
+        txt = dataInput.readUTF();
+    }
+
+    public void write(PreparedStatement preparedStatement) throws SQLException {
+        preparedStatement.setLong(1,id);
+        preparedStatement.setString(2,name);
+        preparedStatement.setString(3,txt);
+    }
+
+    public void readFields(ResultSet resultSet) throws SQLException {
+        id = resultSet.getLong(1);
+        name = resultSet.getString(2);
+        txt = resultSet.getString(3);
+    }
+}
+
+package com.wyd.mr.db;
+
+import org.apache.hadoop.io.Writable;
+import org.apache.hadoop.mapreduce.lib.db.DBWritable;
+
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.IOException;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+
+public class DBOutWritable implements DBWritable, Writable {
+
+    private String word;
+
+    private Integer cnts;
+
+    public String getWord() {
+        return word;
+    }
+
+    public void setWord(String word) {
+        this.word = word;
+    }
+
+    public Integer getCnts() {
+        return cnts;
+    }
+
+    public void setCnts(Integer cnts) {
+        this.cnts = cnts;
+    }
+
+    public void write(DataOutput dataOutput) throws IOException {
+        dataOutput.writeUTF(word);
+        dataOutput.writeInt(cnts);
+    }
+
+    public void readFields(DataInput dataInput) throws IOException {
+        word = dataInput.readUTF();
+        cnts = dataInput.readInt();
+    }
+
+    public void write(PreparedStatement preparedStatement) throws SQLException {
+        preparedStatement.setString(1,word);
+        preparedStatement.setInt(2,cnts);
+    }
+
+    public void readFields(ResultSet resultSet) throws SQLException {
+        word = resultSet.getString(1);
+        cnts = resultSet.getInt(2);
+    }
+}
+
+------------------------------------------------------------------------
+
+warn 机架感知造成java写hdfs报错，具体原因待查，hbase endpoint也可能用不了
+
+机架感知
+编写程序
+实现DNSToSwitchMapping接口
+编写resolve方法
+
+package com.wyd.hdfs.rackaware;
+
+import org.apache.hadoop.net.DNSToSwitchMapping;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class MyRackAware implements DNSToSwitchMapping {
+    public List<String> resolve(List<String> list) {
+
+        List<String> names = new ArrayList<String>();
+
+        for(String str : list){
+            System.out.println(str);
+            if("192.168.56.101".equals(str)){
+                names.add("/rack1/node1");
+            } else if("192.168.56.102".equals(str)) {
+                names.add("/rack1/node2");
+            } else if("192.168.56.103".equals(str)){
+                names.add("/rack2/node3");
+            } else if("192.168.56.104".equals(str)){
+                names.add("/rack2/node4");
+            } else if("192.168.56.105".equals(str)){
+                names.add("/rack3/node5");
+            }
+
+        }
+        return names;
+    }
+
+    public void reloadCachedMappings() {
+
+    }
+
+    public void reloadCachedMappings(List<String> list) {
+
+    }
+}
+打包上传到/usr/local/hadoop-2.8.5/share/hadoop/common/lib目录下,上传到名称节点即可，只在名称节点运行
+
+
+编写core-site.xml
+<property>
+    <name>topology.node.switch.mapping.impl</name>
+    <value>com.wyd.hdfs.rackaware.MyRackAware</value>
+</property>
+
+----------------------------------------------------
+
+用文件配置机架感知
+　　给 NameNode 节点的 core-site.xml 配置文件增加一项配置：
+
+<property>
+　　<name>topology.script.file.name</name>
+　　<value>/home/hadoop/apps/hadoop-2.7.5/etc/hadoop/topology.sh</value>
+</property>
+
+vi topology.sh
+#!/bin/bash
+HADOOP_CONF=/home/hadoop/apps/hadoop-2.7.5/etc/hadoop
+while [ $# -gt 0 ] ;
+do
+ nodeArg=$1
+ exec<${HADOOP_CONF}/topology.data
+ result=""
+ while read line
+ do
+ ar=( $line )
+ if [ "${ar[0]}" = "$nodeArg" ]||[ "${ar[1]}" = "$nodeArg" ]
+ then
+ result="${ar[2]}"
+ fi
+ done
+ shift
+ if [ -z "$result" ]
+ then
+ echo -n "/default-rack"
+ else
+ echo -n "$result"
+ fi
+done
+
+vi topology.data
+192.168.123.102 hadoop1 /switch1/rack1
+192.168.123.103 hadoop2 /switch1/rack1
+192.168.123.104 hadoop3 /switch2/rack2
+192.168.123.105 hadoop4 /switch2/rack2
+
+chmod 777 topology.data topology.sh
+
+----------------------------------------------------------------------------
+
+mapreduce连接大表和小表，将小表缓存到内存中，只在map端连接就可以了
+
+package com.wyd.mr.jointest;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.IOUtils;
+import org.apache.hadoop.io.LongWritable;
+import org.apache.hadoop.io.NullWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.util.HashMap;
+import java.util.Map;
+
+public class MapJoin {
+    public static class MapJonMapper extends Mapper<LongWritable, Text, Text, NullWritable>{
+
+        private Map<String,String> allCustomers = new HashMap<String, String>();
+
+        @Override
+        protected void setup(Context context) throws IOException, InterruptedException {
+            Configuration conf = context.getConfiguration();
+            FileSystem fs = FileSystem.get(conf);
+            FSDataInputStream in = fs.open(new Path(""));
+            BufferedReader br = new BufferedReader(new InputStreamReader(in));
+            String line = null;
+            while ((line = br.readLine()) != null){
+                String cid = line.substring(0, line.indexOf(","));
+                allCustomers.put(cid,line);
+            }
+        }
+
+        @Override
+        protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+            String line = value.toString();
+
+            String cid = line.substring(line.lastIndexOf(",")+1);
+
+            String orderInfo = line.substring(0,line.lastIndexOf(","));
+
+            String customerInfo = allCustomers.get(cid);
+
+            context.write(new Text(customerInfo+","+orderInfo),NullWritable.get());
+        }
+    }
+
+    public static void main(String[] args) throws IOException, ClassNotFoundException, InterruptedException {
+        Configuration conf = new Configuration();
+        Job job = Job.getInstance(conf);
+
+        job.setJobName("MapJoinApp");
+        job.setJarByClass(MapJoin.class);
+
+        FileInputFormat.addInputPath(job, new Path(args[0]));
+        FileOutputFormat.setOutputPath(job, new Path(args[1]));
+
+        job.setNumReduceTasks(0);
+
+        job.setMapperClass(MapJonMapper.class);
+
+        job.setMapOutputKeyClass(Text.class);
+        job.setMapOutputValueClass(NullWritable.class);
+
+        job.waitForCompletion(true);
+    }
+}
+
+当用map端输出时，job.setNumReduceTasks(0);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,1305 @@
+hive1.2底层使用mapreduce作为计算引擎
+hive1.2安装方法
+解压apache-hive-1.2.2-bin.tar.gz到/usr/local
+添加hive-site.xml到/usr/local/apache-hive-1.2.2-bin/conf
+里面的内容是
+<configuration>
+<property>
+        <name>javax.jdo.option.ConnectionURL</name>
+        <value>jdbc:mysql://192.168.56.103:3306/hive</value>
+        <description>JDBC connect string for a JDBC metastore</description>
+</property>
+<property>
+   <name>javax.jdo.option.ConnectionDriverName</name>
+    <value>com.mysql.jdbc.Driver</value>
+   <description>Driver class name for a JDBC metastore</description>
+ </property>
+ <property>
+   <name>javax.jdo.option.ConnectionUserName</name>
+   <value>root</value>
+   <description>username to use against metastore database</description>
+</property>
+<property>
+   <name>javax.jdo.option.ConnectionPassword</name>
+   <value>az63091919</value>
+   <description>password to use against metastore database</description>
+</property>
+</configuration>
+代表mysql连接地址，使用mysql驱动，mysql用户名，mysql密码
+拷贝mysql的驱动jar包到/usr/local/apache-hive-1.2.2-bin/lib目录下
+
+配置HADOOP_HOME到/etc/profile中去
+
+启动hdfs start-dfs.sh  访问http://node2:50070确认hdfs正常工作
+启动yarn start-yarn.sh 访问http://node1:8088确认yarn正常工作
+进入node启动yarn的backupmaster    yarn-daemon.sh start resourcemanager
+
+进入mysql   mysql -uroot -paz63091919
+drop database hive; 
+create database hive; 
+alter database hive character set latin1;
+
+启动hive
+bin/hive
+
+在linux的当前用户目录中，编辑一个.hiverc文件，将参数写入其中
+set hive.cli.print.header=true;   //显示表头
+set hive.cli.print.current.db=true;  //显示当前正在使用的库名
+
+-------------------------------------
+
+把hive启动为一个服务
+在后台启动hive服务
+nohup hiveserver2 1>/dev/null 2>&1 &
+默认监听10000端口
+
+启动hive客户端beeline
+然后输入!connect jdbc:hive2://node4:10000
+输入hdfs用户  root
+密码直接回车
+
+bin/beeline -u jdbc:hive2://node4:10000 -n root
+----------------------------------------------------------------------------------------------------------------
+
+脚本化运行hive
+hive -e "select * from user"
+vi t_order_etl.sh
+
+#!/bin/bash
+hive -e "select * from db_order"
+hive -e "select * from t_user"
+hql="create table demo as select * from db_order"
+hive -e "$hql"
+
+或者把sql写在hql文件里，用hive -f xxx.hql执行文件
+vi xxx.hql
+select * from db_order;
+select * from t_user;
+
+----------------------------------------------------------------------------------------------------------------
+
+show databases; //显示数据库
+create database big24;  //创建数据库
+这时hdfs目录下会产生/user/hive/warehouse/big24.db这个目录
+
+use big24;   //使用big24数据库
+
+create table t_big24(id int,name string,age int,sex string); //创建表
+这时hdfs目录下会产生 /user/hive/warehouse/big24.db/t_big24这个目录
+
+linux下输入hive默认分隔符^a '\001' 在vi编辑器下先按Ctrl+v然后Ctrl+a
+
+---------------------------------------------------------------------------------------------------------------
+
+hive建表语句
+create table t_order(id string,create_time string,amount float,uid string)
+row format delimited
+fields terminated by ',';
+指定数据文件的字段分隔符为逗号,
+
+删除表
+drop table t_order
+	
+
+--------------------------------------------------------------------------------------------------------
+
+hive内部表和外部表
+
+外部表：hdfs的表目录由用户自己指定
+create external table t_access(ip string,url string,access_time string)
+row format delimited
+fields terminated by ','
+location '/access/log';
+           指定的目录
+如果删除外部表，外部表的目录和数据文件不会被删除
+
+------------------------------
+
+内部表：hive自己在hdfs中维护数据目录
+如果删除内部表，数据目录和数据文件一起被删除
+
+--------------------------------------------------------------------------------------------------------
+
+分区表
+/user/hive/warehouse/t_pv_log/day=2017-09-16/
+							 /day=2017-09-17/
+如果想查2017-09-16的数据，就去对应目录查
+如果想查全部的数据就对应t_pv_log目录
+
+create table t_pv_log(ip string,url string,commit_time string)
+partitioned by(day string)
+row format delimited
+fields terminated by ',';
+
+分区标志字段在表查询时也会返回，分区字段不能是表定义中已存在的字段
+
+从本地路径导入数据，注意要是hiveserver运行的机器
+load data local inpath '/root/hivetest/pv.log' into table t_pv_log partition(day='20170915')
+如果文件不在本地而在hdfs中
+load data inpath '/access.log.2017-08-06.log' into table t_access partition(dt='20170806'); 但是hdfs中的文件会移动而不是复制
+
+---------------------------------------------------------------------------------------------------------
+
+创建一张和已存在表表结构相同的表
+create table t_request_2 like t_request; //创建一张空表内部表，只复制了t_request的结构
+复制表字段和数据
+create table t_request_3
+as
+select * from t_request
+
+----------------------------------------------------------------------------------------------------------
+
+老段hive第二天练习数据
+create table t_a(name string,numb int)
+row format delimited
+fields terminated by ',';
+
+create table t_b(name string,nick string)
+row format delimited
+fields terminated by ',';
+
+vi /root/a.txt
+a,1
+b,2
+c,3
+d,4
+vi /root/b.txt
+a,xx
+b,yy
+d,zz
+e,pp
+load data local inpath '/root/a.txt' into table t_a;
+load data local inpath '/root/b.txt' into table t_b;
+
+1.内连接
+select * from t_a inner join t_b;
+得
++-----------+-----------+-----------+-----------+--+
+| t_a.name  | t_a.numb  | t_b.name  | t_b.nick  |
++-----------+-----------+-----------+-----------+--+
+| a         | 1         | a         | xx        |
+| b         | 2         | a         | xx        |
+| c         | 3         | a         | xx        |
+| d         | 4         | a         | xx        |
+| a         | 1         | b         | yy        |
+| b         | 2         | b         | yy        |
+| c         | 3         | b         | yy        |
+| d         | 4         | b         | yy        |
+| a         | 1         | d         | zz        |
+| b         | 2         | d         | zz        |
+| c         | 3         | d         | zz        |
+| d         | 4         | d         | zz        |
+| a         | 1         | e         | pp        |
+| b         | 2         | e         | pp        |
+| c         | 3         | e         | pp        |
+| d         | 4         | e         | pp        |
++-----------+-----------+-----------+-----------+--+
+
+------------------------------------------------------
+
+指定条件的内连接
+select * from t_a a inner join t_b b on a.name = b.name;
+或
+select * from t_a a inner join t_b b where a.name = b.name;
+得
++---------+---------+---------+---------+--+
+| a.name  | a.numb  | b.name  | b.nick  |
++---------+---------+---------+---------+--+
+| a       | 1       | a       | xx      |
+| b       | 2       | b       | yy      |
+| d       | 4       | d       | zz      |
++---------+---------+---------+---------+--+
+
+----------------------------------------------------------
+
+左外连接
+select 
+a.*,b.*
+from 
+t_a a left outer join t_b b;
+得
++---------+---------+---------+---------+--+
+| a.name  | a.numb  | b.name  | b.nick  |
++---------+---------+---------+---------+--+
+| a       | 1       | a       | xx      |
+| a       | 1       | b       | yy      |
+| a       | 1       | d       | zz      |
+| a       | 1       | e       | pp      |
+| b       | 2       | a       | xx      |
+| b       | 2       | b       | yy      |
+| b       | 2       | d       | zz      |
+| b       | 2       | e       | pp      |
+| c       | 3       | a       | xx      |
+| c       | 3       | b       | yy      |
+| c       | 3       | d       | zz      |
+| c       | 3       | e       | pp      |
+| d       | 4       | a       | xx      |
+| d       | 4       | b       | yy      |
+| d       | 4       | d       | zz      |
+| d       | 4       | e       | pp      |
++---------+---------+---------+---------+--+
+
+select a.*,b.* from 
+t_a a left outer join t_b b on a.name = b.name;
+得
++---------+---------+---------+---------+--+
+| a.name  | a.numb  | b.name  | b.nick  |
++---------+---------+---------+---------+--+
+| a       | 1       | a       | xx      |
+| b       | 2       | b       | yy      |
+| c       | 3       | NULL    | NULL    |
+| d       | 4       | d       | zz      |
++---------+---------+---------+---------+--+
+
+-----------------------------------------------
+
+右外连接
+select a.*,b.* from t_a a right outer join t_b b;
+得
++---------+---------+---------+---------+--+
+| a.name  | a.numb  | b.name  | b.nick  |
++---------+---------+---------+---------+--+
+| a       | 1       | a       | xx      |
+| b       | 2       | a       | xx      |
+| c       | 3       | a       | xx      |
+| d       | 4       | a       | xx      |
+| a       | 1       | b       | yy      |
+| b       | 2       | b       | yy      |
+| c       | 3       | b       | yy      |
+| d       | 4       | b       | yy      |
+| a       | 1       | d       | zz      |
+| b       | 2       | d       | zz      |
+| c       | 3       | d       | zz      |
+| d       | 4       | d       | zz      |
+| a       | 1       | e       | pp      |
+| b       | 2       | e       | pp      |
+| c       | 3       | e       | pp      |
+| d       | 4       | e       | pp      |
++---------+---------+---------+---------+--+
+
+select a.*,b.* from t_a a right outer join t_b b on a.name = b.name;
+得
++---------+---------+---------+---------+--+
+| a.name  | a.numb  | b.name  | b.nick  |
++---------+---------+---------+---------+--+
+| a       | 1       | a       | xx      |
+| b       | 2       | b       | yy      |
+| d       | 4       | d       | zz      |
+| NULL    | NULL    | e       | pp      |
++---------+---------+---------+---------+--+
+
+-------------------------------------------------
+
+全外连接
+select a.*,b.* from t_a a full outer join t_b b on a.name=b.name;
+得
++---------+---------+---------+---------+--+
+| a.name  | a.numb  | b.name  | b.nick  |
++---------+---------+---------+---------+--+
+| a       | 1       | a       | xx      |
+| b       | 2       | b       | yy      |
+| c       | 3       | NULL    | NULL    |
+| d       | 4       | d       | zz      |
+| NULL    | NULL    | e       | pp      |
++---------+---------+---------+---------+--+
+
+------------------------------------------------
+
+左半连接(只返回左表的数据)
+select a.* from
+t_a a left semi join t_b b on a.name=b.name;
++---------+---------+--+
+| a.name  | a.numb  |
++---------+---------+--+
+| a       | 1       |
+| b       | 2       |
+| d       | 4       |
++---------+---------+--+
+
+--------------------------------------------------
+
+select upper("abc");
+将字符串变成大写
+
+--------------------------------------------------
+
+--分组聚合查询
+
+select upper("abc");
+--针对每一行进行运算
+select ip,upper(url),access_time
+from t_pv_log;
+
+-- 求每条url的访问总次数
+-- 该表达式是对分好组的数据进行逐组运算
+select 
+url,count(1) as cnts
+from t_pv_log
+group by url;
+
+-- 求每个url的访问者中ip最大的
+select url,max(ip) as ip
+from t_pv_log 
+group by url;
+
+--求每个用户访问同一个页面的所有记录中，时间最晚的一条
+
+select ip,url,max(access_time)
+from t_pv_log 
+group by ip,url;
+
+--------------------------------------------------------------------------------
+
+分组聚合示例
+create table t_access(ip string,url string,access_time string)
+partitioned by(dt string)
+row format delimited
+fields terminated by ',';
+
+vi access.log.0804
+192.168.33.3,http://www.edu360.cn/stu,2017-08-04 15:30:20
+192.168.33.3,http://www.edu360.cn/teach,2017-08-04 15:35:20
+192.168.33.4,http://www.edu360.cn/stu,2017-08-04 15:30:20
+192.168.33.4,http://www.edu360.cn/job,2017-08-04 16:30:20
+192.168.33.5,http://www.edu360.cn/job,2017-08-04 15:40:20
+
+vi access.log.0805
+192.168.33.3,http://www.edu360.cn/stu,2017-08-05 15:30:20
+192.168.44.3,http://www.edu360.cn/teach,2017-08-05 15:35:20
+192.168.33.44,http://www.edu360.cn/stu,2017-08-05 15:30:20
+192.168.33.46,http://www.edu360.cn/job,2017-08-05 16:30:20
+192.168.33.55,http://www.edu360.cn/job,2017-08-05 15:40:20
+
+vi access.log.0806
+192.168.133.3,http://www.edu360.cn/register,2017-08-06 15:30:20
+192.168.111.3,http://www.edu360.cn/register,2017-08-06 15:35:20
+192.168.34.44,http://www.edu360.cn/pay,2017-08-06 15:30:20
+192.168.33.46,http://www.edu360.cn/excersize,2017-08-06 16:30:20
+192.168.33.55,http://www.edu360.cn/job,2017-08-06 15:40:20
+192.168.33.46,http://www.edu360.cn/excersize,2017-08-06 16:30:20
+192.168.33.25,http://www.edu360.cn/job,2017-08-06 15:40:20
+192.168.33.36,http://www.edu360.cn/excersize,2017-08-06 16:30:20
+192.168.33.55,http://www.edu360.cn/job,2017-08-06 15:40:20
+
+load data local inpath '/root/access.log.0804' into table t_access partition(dt='2017-08-04');
+load data local inpath '/root/access.log.0805' into table t_access partition(dt='2017-08-05');
+load data local inpath '/root/access.log.0806' into table t_access partition(dt='2017-08-06');
+
+--查看表的分区
+show partitions t_access;
+
+--求8月4号以后，每天http://www.edu360.cn/job这个页面总访问次数，及访问者中ip地址最大的
+select 
+count(1) cnts,max(ip),dt
+from t_access
+where url = 'http://www.edu360.cn/job'
+and dt > '2017-08-04'
+group by dt;
+得
++-------+----------------+-------------+--+
+| cnts  |      _c1       |     dt      |
++-------+----------------+-------------+--+
+| 2     | 192.168.33.55  | 2017-08-05  |
+| 3     | 192.168.33.55  | 2017-08-06  |
++-------+----------------+-------------+--+
+或者在group by里过滤
+select 
+count(1) cnts,max(ip) ip,dt
+from t_access
+where url = 'http://www.edu360.cn/job'
+group by dt having dt > '2017-08-04';
+
+
+--求8月4号以后，每天每个页面总访问次数，及访问那个页面最大的ip值
+select 
+count(1) cnts,max(url),max(ip),dt
+from t_access
+group by dt,url having dt > '2017-08-04';
+得
++-------+---------------------------------+----------------+-------------+--+
+| cnts  |               _c1               |      _c2       |     dt      |
++-------+---------------------------------+----------------+-------------+--+
+| 2     | http://www.edu360.cn/job        | 192.168.33.55  | 2017-08-05  |
+| 2     | http://www.edu360.cn/stu        | 192.168.33.44  | 2017-08-05  |
+| 1     | http://www.edu360.cn/teach      | 192.168.44.3   | 2017-08-05  |
+| 3     | http://www.edu360.cn/excersize  | 192.168.33.46  | 2017-08-06  |
+| 3     | http://www.edu360.cn/job        | 192.168.33.55  | 2017-08-06  |
+| 1     | http://www.edu360.cn/pay        | 192.168.34.44  | 2017-08-06  |
+| 2     | http://www.edu360.cn/register   | 192.168.133.3  | 2017-08-06  |
++-------+---------------------------------+----------------+-------------+--+
+
+--求8月4号以后，每天每个页面总访问次数，及访问那个页面最大的ip值，并且上述查询结果中总访问次数大于2的记录
+
+select a.* from 
+(select 
+count(1) cnts,max(url) url,max(ip) ip,dt
+from t_access
+group by dt,url having dt > '2017-08-04') a
+where a.cnts > 2;
+得
++---------+---------------------------------+----------------+-------------+--+
+| a.cnts  |              a.url              |      a.ip      |    a.dt     |
++---------+---------------------------------+----------------+-------------+--+
+| 3       | http://www.edu360.cn/excersize  | 192.168.33.46  | 2017-08-06  |
+| 3       | http://www.edu360.cn/job        | 192.168.33.55  | 2017-08-06  |
++---------+---------------------------------+----------------+-------------+--+
+或者
+select 
+count(1) cnts,max(url) url,max(ip) ip,dt
+from t_access
+group by dt,url having dt > '2017-08-04' and cnts > 2;
+
+-----------------------------------------------------------------------------------------------
+
+hive中的数据类型
+数字类型
+  tinyint   1byte  -128到127
+  smallint  2byte  -32768to32767 char
+  int
+  bigint    long
+  float
+  double
+
+日期类型
+  timestamp  长整型时间戳
+  date       yyyy-MM-dd之类
+
+字符串类型
+  string
+  varchar
+  char
+
+混杂类型
+  boolean
+  binary  二进制
+
+复合数据类型
+arr数组
+战狼2,吴京:龙母:刘亦菲,2017-08-16
+create table t_movie(moive_name string,actors array<string>,first_show date)
+row format delimited fields terminated by ','
+collection items terminated by ':';
+
+select movie_name,actors[0],first_show from t_movie;
+
+-----------------------
+
+arr_contains函数
+
+select movie_name,actors,first_show
+from t_movie
+where arr_contains(actors,'吴刚');
+
+在hiveonspark中是array_contains
+
+-----------------------
+
+size函数
+select movie_name,actors,first_time,size(actors)
+from t_movie;
+
+------------------------------------------------------------------------
+
+map数据类型
+有如下数据
+1,zhangsan,father:xiaoming#mother:xiaohuang#brother:xiaoxu,28
+
+create table t_user(id int,name string,family_members map<string,string>,age int)
+row format delimited fields terminated by ','
+collection items terminated by '#'
+map keys terminated by ':'
+
+select id,name,family_members['father'],age
+from t_user;
+
+--------------------
+
+map_keys函数，查出key的iter
+select id,name,map_keys(family_members) as relations,age from t_user;
+
+--------------------
+
+map_values函数，查出value的iter
+select id,name,map_values(family_members),age from t_family;
+
+--------------------
+
+--查出每个人的亲人数量
+select id,name,size(family_members),age from t_family;
+
+--------------------
+
+--查出所有拥有兄弟的人
+select id,name,age,family_members['brother']
+from t_family
+where arr_contains(map_keys(family_members),'brother')
+
+----------------------------------------------------------------------------------------
+
+struct数据类型
+
+有如下数据类型
+1,zhangsan,18:male:beijing
+2,lisi,22:female:shanghai
+
+create table t_user(id int,name string,info struct<age:int,sex:string,addr:string>)
+row format delimited fields terminated by ','
+collection items terminated by ':';
+
+select id,name,info.addr from t_user;
+
+-----------------------------------------------------------------------------------------------------
+
+cast函数  强转函数
+select cast("5" as int);
+select cast(current_timestamp as date);
+select cast("2017-09-17" as date);
+select id,cast(birthday as date) as bir,cast(salary as float) from t_fun;
+
+select unix_timestamp();  //当前时间戳
+select unix_timestamp("2017/08/10 17:50:30","yyyy/MM/dd HH:mm:ss")
+
+------------------------------------------------------------------------------------------------
+
+数学运算函数
+select round(5.4)  ##5  四舍五入
+select round(5.1345,3)  ##5.135  四舍五入保留3位小数
+select ceil(5.4) ##6  向上取整
+select floor(5.4)  ##5  向下取整
+select abs(-5.4)  ##5.4  取绝对值
+select greatest(3,6,5)  ##6  取最大值
+select least(3,6,5) ##3  取最小值
+
+------------------------------------------------------------------------------------------
+
+concat(string A,string B) ##拼接字符串
+concat(string rag,string A,string B)  ##拼接字符串中间加分隔符rag
+
+有如下信息
+192,168,33,66,zhangsan,male
+192,168,33,77,wangwu,mail
+192,168,43,100,lisi,female
+
+create table t_employ_ip(ip_seg1 string,ip_seg2 string,ip_seg3 string,ip_seg4 string,name string,sex string)
+row format delimited fields terminated by ',';
+
+select concat_ws('.'ip_seg1,ip_seg2,ip_seg3,ip_seg4) as ip,name,sex from t_employ_ip;
+
+--------------------------------------------------------
+
+length(string A) ##求字符串长度
+
+--------------------------------------------------------
+
+select split('18:male:beijing',':');  ##按:切割字符串
+
+---------------------------------------------------------------------------------
+
+to_date函数  ##字符串转日期函数
+select to_date("2017-09-17 16:58:32")
+
+--------------------------------------------
+
+时间戳转字符串
+select from_unixtime(unix_timestamp(),'yyyy-MM-dd HH:mm:ss')
+
+--------------------------------------------------------
+
+把字符串转unix时间戳
+select unix_timestamp("2017/08/10 17:50:30","yyyy/MM/dd HH:mm:ss")
+
+----------------------------------------------------------
+
+explode()函数，行转列函数
+假如有以下数据
+1,zhangsan,化学:物理:数学:语文
+2,lisi,化学:数学:生物:生理:卫生
+3,wangwu,化学:语文:英语:体育:生物
+
+create table t_stu_subject(id int,name string,subjects array<string>)
+row format delimited fields terminated by ','
+collection items terminated by ":";
+
+load data local inpath '/root/stu_sub.dat' into table t_stu_subject;
+
+select explode(subjects) from t_stu_subject;
++------+--+
+| col  |
++------+--+
+| 化学   |
+| 物理   |
+| 数学   |
+| 语文   |
+| 化学   |
+| 数学   |
+| 生物   |
+| 生理   |
+| 卫生   |
+| 化学   |
+| 语文   |
+| 英语   |
+| 体育   |
+| 生物   |
++------+--+
+
+select distinct tmp.subs from (select explode(subjects) subs from t_stu_subject) tmp;
+
++-----------+--+
+| tmp.subs  |
++-----------+--+
+| 体育        |
+| 化学        |
+| 卫生        |
+| 数学        |
+| 物理        |
+| 生物        |
+| 生理        |
+| 英语        |
+| 语文        |
++-----------+--+
+
+------------------------------------------------------------------------------------------------------------
+
+lateral view函数  ##横向连接
+select id,name,sub from t_stu_subject lateral view explode(subjects) tmp as sub
++-----+-----------+----------+--+
+| id  |   name    | tmp.sub  |
++-----+-----------+----------+--+
+| 1   | zhangsan  | 化学       |
+| 1   | zhangsan  | 物理       |
+| 1   | zhangsan  | 数学       |
+| 1   | zhangsan  | 语文       |
+| 2   | lisi      | 化学       |
+| 2   | lisi      | 数学       |
+| 2   | lisi      | 生物       |
+| 2   | lisi      | 生理       |
+| 2   | lisi      | 卫生       |
+| 3   | wangwu    | 化学       |
+| 3   | wangwu    | 语文       |
+| 3   | wangwu    | 英语       |
+| 3   | wangwu    | 体育       |
+| 3   | wangwu    | 生物       |
++-----+-----------+----------+--+
+
+-----------------------------------------------------------------
+hive wordcount
+
+select tmp.word,count(1) cnts 
+from (select explode(split(words,' ')) word from t_wc) tmp 
+group by tmp.word order by cnts desc
+
+-----------------------------------------------------------------------------------------------------------------
+
+sort_array()
+select sort_array(array('c','b','a'));
++----------------+--+
+|      _c0       |
++----------------+--+
+| ["a","b","c"]  |
++----------------+--+
+
+-----------------------------------------------------------------------------------------------
+
+case when
+
+select id,name,
+case
+when age<28 then 'youngth'
+when age >=28 and age < 50 then 'middle'
+else 'old'
+end
+from t_user;
+
+---------------------------------------------------------------------------------------------
+
+if
+select movie_name,actors,first_show
+if(array_contains(actors,'吴刚'),'好电影','懒电影')
+from t_movie
+
+---------------------------------------------------------------------------------------------
+
+row_number() over()
+
+select tmp.*
+from (select id,age,name,sex,row_number() over(partition by sex order by age desc) rk from t_rn) tmp
+where tmp.rk < 3
+有如下数据
+1,19,a,male
+2,19,b,male
+3,22,c,female
+4,16,d,female
+5,30,e,male
+6,26,f,female
+
+create table t_rn(id int,age int,name string,sex string)
+row format delimited fields terminated by ',';
+
+load data local inpath '/root/rn.dat' into table t_rn;
+
+-----------------------------------------------------------------------------------------------------------
+
+有如下数据
+A,2015-01,5
+A,2015-01,15
+B,2015-01,5
+A,2015-01,8
+B,2015-01,25
+A,2015-01,5
+C,2015-01,10
+C,2015-01,20
+A,2015-02,4
+A,2015-02,6
+C,2015-02,30
+C,2015-02,10
+B,2015-02,10
+B,2015-02,5
+A,2015-03,14
+A,2015-03,6
+B,2015-03,20
+B,2015-03,25
+C,2015-03,10
+C,2015-03,20
+
+create table t_accumulate(uid string,month string,amount int)
+row format delimited fields terminated by ',';
+
+load data local inpath '/root/accumulate.dat' into table t_accumulate;
+
+求每个用户每个月的销售额和累积的销售额
+第一种方法，传统方法
+
+create table t_accumulate_mid
+as
+select uid,month,sum(amount) samount
+from t_accumulate group by uid,month;
+得
++------+----------+----------+--+
+| uid  |  month   | samount  |
++------+----------+----------+--+
+| A    | 2015-01  | 33       |
+| A    | 2015-02  | 10       |
+| A    | 2015-03  | 20       |
+| B    | 2015-01  | 30       |
+| B    | 2015-02  | 15       |
+| B    | 2015-03  | 45       |
+| C    | 2015-01  | 30       |
+| C    | 2015-02  | 40       |
+| C    | 2015-03  | 30       |
++------+----------+----------+--+
+
+
+
+select auid uid, bmonth month,max(bsamount) monthsale,sum(asamount) amount
+from (select a.uid auid,a.month amonth,a.samount asamount,b.month bmonth,b.samount bsamount
+from t_accumulate_mid a join t_accumulate_mid b
+on a.uid = b.uid where a.month <= b.month) tmp
+group by auid,bmonth;
+
+其中
+select a.uid auid,a.month amonth,a.samount asamount,b.month bmonth,b.samount bsamount
+from t_accumulate_mid a join t_accumulate_mid b
+on a.uid = b.uid where a.month <= b.month
+得
++-------+----------+-----------+----------+-----------+--+
+| auid  |  amonth  | asamount  |  bmonth  | bsamount  |
++-------+----------+-----------+----------+-----------+--+
+| A     | 2015-01  | 33        | 2015-01  | 33        |
+| A     | 2015-01  | 33        | 2015-02  | 10        |
+| A     | 2015-02  | 10        | 2015-02  | 10        |
+| A     | 2015-01  | 33        | 2015-03  | 20        |
+| A     | 2015-02  | 10        | 2015-03  | 20        |
+| A     | 2015-03  | 20        | 2015-03  | 20        |
+| B     | 2015-01  | 30        | 2015-01  | 30        |
+| B     | 2015-01  | 30        | 2015-02  | 15        |
+| B     | 2015-02  | 15        | 2015-02  | 15        |
+| B     | 2015-01  | 30        | 2015-03  | 45        |
+| B     | 2015-02  | 15        | 2015-03  | 45        |
+| B     | 2015-03  | 45        | 2015-03  | 45        |
+| C     | 2015-01  | 30        | 2015-01  | 30        |
+| C     | 2015-01  | 30        | 2015-02  | 40        |
+| C     | 2015-02  | 40        | 2015-02  | 40        |
+| C     | 2015-01  | 30        | 2015-03  | 30        |
+| C     | 2015-02  | 40        | 2015-03  | 30        |
+| C     | 2015-03  | 30        | 2015-03  | 30        |
++-------+----------+-----------+----------+-----------+--+
+
+再用子查询得
++------+----------+------------+---------+--+
+| uid  |  month   | monthsale  | amount  |
++------+----------+------------+---------+--+
+| A    | 2015-01  | 33         | 33      |
+| A    | 2015-02  | 10         | 43      |
+| A    | 2015-03  | 20         | 63      |
+| B    | 2015-01  | 30         | 30      |
+| B    | 2015-02  | 15         | 45      |
+| B    | 2015-03  | 45         | 90      |
+| C    | 2015-01  | 30         | 30      |
+| C    | 2015-02  | 40         | 70      |
+| C    | 2015-03  | 30         | 100     |
++------+----------+------------+---------+--+
+
+第二张方法
+窗口分析函数 sum() over()
+
+select uid,month,amount
+,sum(amount) over(partition by uid order by month rows between unbounded preceding and current row) accumulate
+from                                                 //表示从当前行加到最前面一行
+(select uid,month,sum(amount) amount
+from t_accumulate group by uid,month) tmp
+
+-----------------------------------------------------------------------------------------------------------
+
+hive自定义函数
+udf
+<dependency>
+            <groupId>org.apache.hive</groupId>
+            <artifactId>hive-exec</artifactId>
+            <version>1.2.2</version>
+        </dependency>
+
+package com.wyd.hive.udf;
+
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import org.apache.hadoop.hive.ql.exec.Description;
+import org.apache.hadoop.hive.ql.exec.UDF;
+
+                                描述      详细描述
+@Description(name = "myjson",value = "",extended = "")
+public class MyJsonParser extends UDF {
+
+    public String evaluate(String json, int index){
+        JSONArray objects = JSON.parseArray(json);
+        Object o = objects.get(index);
+        return (String)o;
+    }
+}
+
+打包，上传到服务器
+在hive shell里
+0: jdbc:hive2://node4:10000> add jar /root/hive24-1.0-SNAPSHOT.jar
+0: jdbc:hive2://node4:10000> create temporary function myjson as 'com.wyd.hive.udf.MyJsonParser'
+
+
+select jsonpa(json,"movie") movie,cast(jsonpa(json,"rate") as INT) rate,from_unixtime(cast(jsonpa(json,"timeStamp") as BIGINT),'yyyy/MM/dd HH:mm:ss') time,jsonpa(json,"uid") uid from t_ratingjson limit 10; 
+
+--------------------------------------------------------------------------------------------------
+
+hive自带json解析函数
+json_tuple(json,'key1','key2') as (key1,key2)
+
+select json_tuple(json,'movie','rate,'timestamp','uid') as (movie,rate,ts,uid) from t_rating;
+
+-----------------------------------------------------------------------------------------------------------
+
+假如有一个web系统，每天生成以下日志文件：
+
+2017-09-15号的数据：
+192.168.33.6,hunter,2017-09-15 10:30:20,/a
+192.168.33.7,hunter,2017-09-15 10:30:26,/b
+192.168.33.6,jack,2017-09-15 10:30:27,/a
+192.168.33.8,tom,2017-09-15 10:30:28,/b
+192.168.33.9,rose,2017-09-15 10:30:30,/b
+192.168.33.10,julia,2017-09-15 10:30:40,/c
+
+
+2017-09-16号的数据：
+192.168.33.16,hunter,2017-09-16 10:30:20,/a
+192.168.33.18,jerry,2017-09-16 10:30:30,/b
+192.168.33.26,jack,2017-09-16 10:30:40,/a
+192.168.33.18,polo,2017-09-16 10:30:50,/b
+192.168.33.39,nissan,2017-09-16 10:30:53,/b
+192.168.33.39,nissan,2017-09-16 10:30:55,/a
+192.168.33.39,nissan,2017-09-16 10:30:58,/c
+192.168.33.20,ford,2017-09-16 10:30:54,/c
+
+
+
+2017-09-17号的数据：
+192.168.33.46,hunter,2017-09-17 10:30:21,/a
+192.168.43.18,jerry,2017-09-17 10:30:22,/b
+192.168.43.26,tom,2017-09-17 10:30:23,/a
+192.168.53.18,bmw,2017-09-17 10:30:24,/b
+192.168.63.39,benz,2017-09-17 10:30:25,/b
+192.168.33.25,haval,2017-09-17 10:30:30,/c
+192.168.33.10,julia,2017-09-17 10:30:40,/c
+
+
+create table t_web_log(ip string,uid string,access_time string,url string)
+partitioned by (day string)
+row format delimited fields terminated by ',';
+
+load data local inpath '/root/9-15.log' into table t_web_log partition(day='2017-09-15');
+load data local inpath '/root/9-16.log' into table t_web_log partition(day='2017-09-16');
+load data local inpath '/root/9-17.log' into table t_web_log partition(day='2017-09-17');
+
+--统计日活信息
+
+--创建日活跃用户表
+create table t_user_active_day(ip string,uid string,first_access string,url string)
+partitioned by(day string)
+row format delimited fields terminated by ',';
+
+insert into table t_user_active_day partition(day='2017-09-15')
+select tmp.ip ip,tmp.uid uid,tmp.access_time first_access,tmp.url url
+from 
+(select ip,uid,access_time,url
+,row_number() over(partition by uid order by access_time) rn
+from t_web_log where day='2017-09-15') tmp
+where tmp.rn < 2
+
+--统计日新用户
+逻辑图详见 日新用户统计逻辑.png
+
+--创建历史用户表
+create table t_user_history(uid string)
+
+--创建每日新增用户表
+create table t_user_new_day like t_user_active_day;
+
+insert into table t_user_new_day partition(day='2017-09-15')
+select tuad.ip,tuad.uid,tuad.first_access,tuad.url
+from t_user_active_day tuad 
+left outer join t_user_history  tuh on tuad.uid = tuh.uid
+where tuad.day = '2017-09-15' and tuh.uid IS NULL;
+
+insert into table t_user_history
+select uid from t_user_new_day
+where day='2017-09-15';
+
+---------------------------------------------------------------
+
+开发hive脚本
+
+#!/bin/bash
+day_str=`date -d '-1 day' + '%Y-%m-%d'`
+hive_exec=/usr/local/apache-hive-1.2.2-bin/bin/hive
+
+HQL_user_active_day="
+insert into table big24.t_user_active_day partition(day=\"$day_str\")
+select tmp.ip ip,tmp.uid uid,tmp.access_time first_access,tmp.url url
+from 
+(select ip,uid,access_time,url
+,row_number() over(partition by uid order by access_time) rn
+from big24.t_web_log where day=\"$day_str\") tmp
+where tmp.rn < 2;"
+
+HQL_user_new_day="
+insert into table big24.t_user_new_day partition(day=\"$day_str\")
+select tuad.ip,tuad.uid,tuad.first_access,tuad.url
+from big24.t_user_active_day tuad 
+left outer join big24.t_user_history  tuh on tuad.uid = tuh.uid
+where tuad.day = \"$day_str\" and tuh.uid IS NULL;
+"
+
+HQL_user_history="
+insert into table big24.t_user_history
+select uid from big24.t_user_new_day
+where day=\"$day_str\";
+"
+
+$hive_exec -e "$HQL_user_active_day"
+$hive_exec -e "$HQL_user_new_day"
+$hive_exec -e "$HQL_user_history"
+
+--------------------------------------------------------------------------------------------------------
+
+使用java代码连接到hive
+添加maven依赖
+<!-- https://mvnrepository.com/artifact/org.apache.hive/hive-jdbc -->
+<dependency>
+    <groupId>org.apache.hive</groupId>
+    <artifactId>hive-jdbc</artifactId>
+    <version>1.2.2</version>
+</dependency>
+<!-- https://mvnrepository.com/artifact/org.apache.hadoop/hadoop-common -->
+<dependency>
+    <groupId>org.apache.hadoop</groupId>
+    <artifactId>hadoop-common</artifactId>
+    <version>2.8.5</version>
+</dependency>
+
+public class HiveClientDemo {
+    public static void main(String[] args) throws ClassNotFoundException, SQLException {
+        Class.forName("org.apache.hive.jdbc.HiveDriver");
+        Connection conn = DriverManager.getConnection("jdbc:hive2://node4:10000", "root", "");
+        Statement st = conn.createStatement();
+        ResultSet resultSet = st.executeQuery("select name,numb from big24.t_a");
+        while(resultSet.next()){
+            System.out.println(resultSet.getString(1) +","+resultSet.getInt(2));
+        }
+        resultSet.close();
+        st.close();
+        conn.close();
+    }
+}
+
+用springdata也可以访问
+
+------------------------------------------------------------------------------------------------------
+
+桶表
+create table t3(id int,name string,age int)
+clustered by(id) into 3 buckets     //按id分桶，分三个桶
+row format delimited fields terminated by ',';
+
+注意这样加载数据不会产生分桶操作
+load data local inpath '/root/t3.dat' into table t3; 
+
+set hive.enforce.bucketing = true;
+set mapreduce.job.reduces=3;
+
+insert into t3 select * from t3_1;
+这样才会插入分桶数据
+桶表适用于就按id查询的情况
+
+桶表中桶的数量如何设定
+  评估数据量，保证每个桶的数据量是block的2倍
+
+--------------------------------------------------------------------------------------------
+
+union查询
+两张连接的表字段个数必须相同，类型可以不一样
+select id,name from customers union
+
+
+export导出数据
+  export table customers to '/user/exportdata'   //将导出表结构和数据
+                              这是hdfs上的目录地址
+
+order是全局排序
+
+sort是map端排序
+如果设置task的数量为一，那sort也相当于全排序
+
+
+set hive.exec.reducers.bytes.per.reducer=xxx   //设置reducetask的字节数
+set hive.exec.reducers.max=5                   //设置reducetask的最大任务数
+set mapreduce.job.reduce=2                     //设置执行的reduce数量
+
+设置
+set hive.exec.reducers.max=0
+set mapreduce.job.reduce=0
+就会使hive没有reduce阶段
+
+distribute by 类似于 group by
+
+cluster by 等于  distribute by sort by
+
+有如下数据
+mid money name
+AA  15.0  商店1
+AA  20.0  商店2
+BB  22.0  商店3
+CC  44.0  商店4
+
+    执行hive语句：
+
+select mid, money, name from store distribute by mid sort by mid asc, money asc
+我们所有的mid相同的数据会被送到同一个reducer去处理，这就是因为指定了distribute by mid，这样的话就可以统计出每个商户中各个商店盈利的排序了（这个肯定是全局有序的，因为相同的商户会放到同一个reducer去处理）。这里需要注意的是distribute by必须要写在sort by之前。
+
+ cluster by的功能就是distribute by和sort by相结合，如下2个语句是等价的：
+select mid, money, name from store cluster by mid
+select mid, money, name from store distribute by mid sort by mid
+    如果需要获得与3中语句一样的效果：
+select mid, money, name from store cluster by mid sort by money
+注意被cluster by指定的列只能是降序，不能指定asc和desc。
+
+https://blog.csdn.net/jthink_/article/details/38903775
+
+--------------------------------------------------------------------------------------
+
+动态分区
+SET hive.exec.dynamic.partition=true;  //表示开启动态分区功能
+SET hive.exec.dynamic.partition.mode=nonstrict //默认是strict(严格模式)，设置为非严格模式
+
+1,tom,18,china,beijing
+2,jack,20,china,tianjing
+3,hank,16,china,beijing
+4,lee,32,us,newyork
+5,mary,26,us,la
+
+create table t_employee(id int,name string,age int,state string,city string)
+row format delimited fields terminated by ',';
+
+load data local inpath '/root/employee.log' into table t_employee;
+
+create table t_user_depart(id int,name string,age int)
+partitioned by(sta string, ct string)
+row format delimited fields terminated by ',';
+
+insert into table t_user_depart
+partition(sta='china',ct)
+select id,name,age,city from t_employee
+where state = 'china';
+
+SET hive.exec.dynamic.partition.mode=nonstrict;
+
+insert into table t_user_depart
+partition(sta,ct)
+select id,name,age,state,city from t_employee
+where state = 'us';
+
+严格模式下，至少有一个分区是静态的
+如果都是动态分区，那就要用非严格模式
+
+
+-------------------------------------------------------------------------------------------
+
+hive事务处理在>0.13.0之后支持行级事务
+1、所有事务自动提交
+2、只支持orc格式
+3、使用bucket表
+4、配置hive参数，使其支持事务
+
+SET hive.support.concurrency = true;
+SET hive.enforce.bucketing = true;
+SET hive.exec.dynamic.partition.mode = nonstrict  //动态分区模式
+SET hive.txn.manager = org.apache.hadoop.hive.ql.lockmgr.DbTxnManager;  //事务管理器
+SET hive.compactor.initiator.on = true;
+SET hive.compactor.worker.threads = 1;  //工作线程数
+
+SET hive.support.concurrency = true;
+SET hive.enforce.bucketing = true;
+SET hive.exec.dynamic.partition.mode = nonstrict;
+SET hive.txn.manager = org.apache.hadoop.hive.ql.lockmgr.DbTxnManager;
+SET hive.compactor.initiator.on = true;
+SET hive.compactor.worker.threads = 1;
+
+修改hive-site.xml添加
+<property>
+  <name>hive.support.concurrency</name>
+  <value>true</value>
+</property>
+
+<property>
+  <name>hive.enforce.bucketing</name>
+  <value>true</value>
+</property>
+
+<property>
+  <name>hive.exec.dynamic.partition.mode</name>
+  <value>nonstrict</value>
+</property>
+
+<property>
+  <name>hive.txn.manager</name>
+  <value>org.apache.hadoop.hive.ql.lockmgr.DbTxnManager</value>
+</property>
+
+<property>
+  <name>hive.compactor.initiator.on</name>
+  <value>true</value>
+</property>
+
+<property>
+  <name>hive.compactor.worker.threads</name>
+  <value>1</value>
+</property>
+
+然后更新mysql元数据表
+Upgrade your hive mysql metastore db with hive-txn-schema-0.14.0.mysql.sql as follows..
+mysql> SOURCE /usr/local/hadoop/hive/scripts/metastore/upgrade/mysql/hive-txn-schema-0.14.0.mysql.sql;
+
+create table t_e(id int,name string,age int,state string,city string)
+clustered by(id) into 3 buckets
+row format delimited fields terminated by ','
+stored as orc
+tblproperties('transactional'='true');
+
+insert into table t_e
+select * from t_employee;
+
+就可以支持更新删除操作了
+update t_e set name = 'hook' where id = 3;
+
+----------------------------------------------------------------------------------------------------------
+
+hive视图
+
+create view v1 as
+select a.name,a.numb,b.nick
+from t_a a left outer join t_b b on a.name = b.name;
+
+查询视图
+desc formatted v1
+
+select * from v1;
+
+-------------------------------------------------------------------------------------------------
+
+map端join
+set hive.auto.convert.join=true;
+map端连接暗示
+select /*+ mapjoin(t_a) */ a.name,a.numb,b.nick
+from t_a a left outer join t_b b on a.name = b.name
+
+查看sql执行计划
+explain select ...
+
+---------------------------------------------------------------------------------------
+
+hive本地模式运行
+临时设置
+set oldjobtracker=${hiveconf:mapred.job.tracker}
+set mapred.job.tracker=local
+set mapred.tmp.dir=/home/edward/tmp
+
+执行自己想执行的语句
+
+执行完毕后恢复集群模式
+set mapred.job.tracker=${oldjobtracker}
+
+也可以设置自动执行本地模式
+set hive.exec.mode.local.auto=true
+或写到hive.site.xml中
+
+------------------------------------------------------------------------------------------------------
+
+并行执行  不存在依赖关系的两个阶段同时执行
+set hive.exec.parallel=true   //开启自动并行执行
+或写到hive.site.xml中
+
+-----------------------------------------------------------------------------------------------------
+
+严格模式
+set hive.mapred.mode=strict
+1、严格模式下分区表必须指定分区，或者带where的分区字段条件
+2、order by时必须使用limit子句，避免全表扫描
+3、避免笛卡尔集的查询
+
+------------------------------------------------------------------------------------
+
+设置mr的数量
+set hive.exec.reducers.bytes.per.reducer=750000000;  //设置reduce处理的字节数
+jvm重用
+set mapreduce.job.jvm.numtasks=1;    //-1为没有限制，适用于大量小文件
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,559 @@
+var a = 100   //变量
+val a = 100   //常量
+
+var a:String = "hello world"
+
+Scala 7种数据类型Byte Char Short Int Long Float Double Boolean,这些基本类型都是类
+
+--------------------------------------------------------
+
+操作符重载，运算符都是方法
+
+scala函数，没有方法
+scala方法，通过对象调用
+
+scala的apply方法，可以隐藏的方法
+var a = "hello"
+a(1) 等价于 a.apply(1)
+
+
+scala每条语句都有值，但是赋值语句没有值，用Unit表示，等价于()
+
+命令行进入粘贴模式
+scala>:paste
+
+------------------------------------------------------
+
+printf("Hello, %s! You are %d","Fred",42)
+
+------------------------------------------------------
+
+while循环
+var i = 0
+while(i < 10){
+	println(i)
+	i += 1
+}
+
+-------------------------------------------------------
+
+for循环
+to事前闭后也闭 []
+until [) 前闭后开
+for(i <- 0 to 10){
+	
+}
+
+for循环终止方法
+import scala.util.control.Breaks._
+for(x <- 1 to 10){
+	if(x == 3) break
+}
+
+嵌套循环
+for(i <- 1 to 3; j <- 1 to 4 if i != j){
+	
+}
+外层循环是i，内层循环是j，当i不等于j才能进入循环体
+
+
+var arr = for(i <- 1 to 10) yield i%3
+循环中处理每个元素，产生新集合
+
+--------------------------------------------------------------------
+
+定义函数
+def add(a:Int,b:Int):Int = a + b
+
+递归函数 求阶乘，必须定义返回值，如果没有返回值scala编译器无法校验n*fac(n-1)的类型是Int
+def fac(n: Int): Int = if (n <= 0) 1 else n * fac(n - 1)
+
+函数的默认值和带名参数
+
+def decorate(prefix: String, str: String, suffix: String) = {
+	prefix + str + suffix
+}
+
+带默认值的函数
+def decorate(prefix: String = "[[",str: String, suffix: String = "]]") = {
+	prefix + str + suffix
+}
+带名调用
+decorate(str="hello")
+
+----------------------------------------------------
+
+变长参数
+def add(arrs: Int*) = {
+	for(x <- arrs){
+		println(x)
+	}
+}
+调用add(1,2,3)
+
+变长参数做累加和
+def sum(args: Int*): Int = {
+	if (args.lenght == 0) 0 else args.head + sum(args.tail:_*)
+}
+
+---------------------------------------------------------------
+
+过程
+如果函数体包含在花括号当中但没有前面的=号，那么返回类型就是Unit。这样的函数被称作过程
+
+def out(a: Int) {
+	println(a)
+}
+
+---------------------------------------------------------------------------------------
+
+lazy延迟计算
+
+lazy val x = scala.io.Source.fromFile("/Users/wangyadi/scala/buy.scala").mkString
+定义时不加载，调用时才加载
+println(x)时再加载
+
+------------------------------------------------------------------------------------------
+
+scala异常
+try{
+	"hello".toInt
+} catch{
+	case _:Exception => print;
+	case ex:IOException => print(x)
+}
+
+-----------------------------------------------------------------------------
+
+定长数组
+val nums = new Array[Int](10)   //apply(10)
+
+val arr = Array(1,2,3)
+
+访问数组arr(0)
+
+--------------------------------------------------------------------------------------
+
+变长数组
+import scala.collection.mutable.ArrayBuffer
+创建数组缓冲区对象
+val b = ArrayBuffer[Int]()
+
+b += 10
+b += 2
+b.+=(22)
+b += (2,3,4,5,6)
+b ++= Array(8,3,4,2)
+
+b.trimStart(2) //从前面移除两个元素
+b.trimEnd(1)  //从末尾移除一个元素
+
+b.insert(2,6)  //在第二个元素位置插入数字6
+
+b.remove(2)  //移除位置2的元素
+
+b.toArray  //转换成定长数组
+
+val a = Array(1 to 10:_*)
+
+a.filter(_%2==0).map(_*2)
+
+数组的常用方法
+arr.sum
+arr.min
+arr.max
+
+arr.sorted(_ < _)  //升序
+
+import scala.util.Sorting
+
+arr.mkString(start:String, step: String, suffed: String)
+
+---------------------------------------------------------------
+
+val arr:Array[Int] = new Array[Int](4)
+
+多维数组
+val arr = new Array[Array[Int]](4)
+
+arr(0) = new Array(1)
+arr(1) = new Array(1,2)
+arr(2) = new Array(1,2,3)
+arr(3) = new Array(1,2,3,4)
+
+还可以这样定义
+val arr = Array.ofDim[Int](3,4)
+定义一个三行四列的数组
+访问元素用两个小括弧
+arr(0)(1)
+
+for(x <- 0 until arr.length){
+	for(j <- 0 until arr(x).length){
+
+	}
+}
+
+---------------------------------------------------------------
+
+import scala.collection.JavaConversions.bufferAsJavaList
+import scala.collection.JavaConversions.asScalaBuffer
+
+val buf = ArrayBuffer(1,2,3,4)
+val list:java.util.List[Int] = buf
+
+-----------------------------------------------------------------
+
+映射和元组
+构造不可变map
+val scores = Map("Alice" -> 10, "Bob" -> 3, "Cindy" -> 8)
+
+不可变map可以连接返回新的映射
+
+val newMap = scores + ("kitty" -> 21, "tim" -> 15)
+
+构造可变map
+
+val scores = scala.collection.mutable.Map("Alice" -> 10, "Bob" -> 3, "Cindy" -> 8)
+val scores = new scala.collection.mutable.HashMap[String, Int]
+val scores = scala.collection.mutable.HashMap[String, Int]()
+
+添加
+scores += ("jim" -> 5,"luck" -> 7)
+删除
+scores -= "jim"
+
+for循环map
+
+for((k,v) <- scores) {
+	println(k + "->" + v)
+}
+
+scores.keySet
+for(v <- scores.values) println(v)
+
+for((k,v) <- scores) yield (v,k)
+
+-------------------------------------------------------------------------
+
+元组  最高支持tuple22
+
+val tupletest =  (1,"tom",22)
+
+val id = tupletest._1
+
+--------------------------------------------------------------------------
+
+数组的zip操作
+val husband = Array("ximenqing","niulang","liyapeng","xietingfeng")
+val wife = Array("pan","zhi","wang")
+
+val husbandAndWife = husband.zip(wife)
+Array(("ximenqing","pan"),("niulang","zhi"),("liyapeng","wang"))
+
+----------------------------------------------------------------------------
+
+scala的类
+
+class Counter{
+	private var value = 0 //你必须初始化字段
+	var age = 1   //不是private修饰的scala变量自带getter，setter方法
+	val name = "hank"  //val 只带getter方法
+
+	private[this] var passwd = 123  //只能在自己的对象里访问，在其他对象里都不能访问
+
+	def increment() = {value += 1}  //没加修饰符的方法是共有的
+	def current = value
+}
+
+var counter = new Counter
+
+counter.current   //定义时没加括号的方法调用时一定不能加括号
+
+
+定义符合java getter setter规范的scala bean
+
+import scala.reflect.BeanProperty
+class Person {
+	@BeanProperty var name:String = _
+}
+
+---------------------------------------------------------------------
+
+构造器
+
+主构造器
+辅助构造器
+			//在类上定义的构造器就是主构造器
+class Person(var id: Int){
+
+	var name = "tom";
+	var age = 12;
+
+	//这是辅助构造
+	def this(name:String){
+		this(2)  //第一行代码调用主构造器，所有辅助构造中总得有一个调用主构造器
+		this.name = name
+	}
+
+	//第二个辅助构造
+	def this(name:String, age: Int){
+		this(name);  //先调用另一个辅助构造
+		this.age = age;
+	}
+}
+//在主构造器中
+//val和var修饰的都是在类里有成员变量的
+//没有修饰的就不会出现在类中
+class Student(id:Int,val name:String,var age){
+	println("hello world") //主构造器会执行类定义中的所有语句
+}
+
+-------------------------------------------------------------------
+
+scala对象
+
+scala没有静态的概念，如果需要定义静态成员，可以通过object实现。
+编译完成后，会生成对应的类，方法都是静态方法，非静态成员对应到单例类中
+单例类以Util$作为类名称
+
+object Util{
+	//单例类中(Util$)
+	private car:String = "benz"
+	//静态方法
+	def hello = printlb("hello world "+car)
+}
+
+---------------------------------------------------------
+
+类的伴生对象，具有相同名称的类和对象，且在同一个scala文件中定义
+
+class Account {
+	val id = Account.newUniqueNumber()
+	private var balance = 0.0
+	def deposit(amount: Double){balance += amount}
+}
+
+object Account{
+	private var lastNumber = 0
+
+	private def newUniqueNumber = {lastNumber += 1; lastNumber}
+}
+
+------------------------------------------------------------------
+
+scala抽象类
+abstract class Dog(val name:String){
+	def a(): Unit  //抽象方法没有方法体
+}
+
+继承抽象类
+class TaiDi extends Dog("doudou"){
+	override def a():Unit = {}
+}
+
+--------------------------------------------------------
+
+scala的main方法
+
+object HelloWord {
+	def main(args: Array[String]) = {
+		println("hello word")
+	}
+}
+
+--------------------------------------------------------------
+
+trait Hello{
+	
+}
+
+--------------------------------------------------------------
+
+package object  包对象,里面不能包含函数和变量，可以包含类，对象，特质
+
+package a.a1.aa1
+package object packagedemo{
+	val name = "hello world"
+}
+
+会产生a.a1.aa1.packagedemo包，文件就叫package.class,每个包都可以有一个包对象
+在父包下定义
+可以把包对象的源文件叫package.scala
+
+编译完成后生成ppackagedemo为包，下面含有package.class
+
+--------------------------------------------------------------
+
+包的可见性
+class Persion{
+private[package|this] def description = {}
+}
+-----------------------------------------------------------
+
+导入引入别名
+import com.wyd.{A => A0}
+导入多个类
+import com.wyd.{A,B,C}
+
+导入包，但隐藏其中的某个成员
+import java.util.{HashMap => _,_}
+                    隐藏，      导入其他全部
+
+-----------------------------------------------------------------
+
+scala继承
+class Dog extends animal{
+	
+	//覆盖
+	override def run = {}
+
+}
+
+---------------------------------------------------------------------------
+
+类型检查
+p.isInstanceOf[Employee]
+类型转换
+val employee = p.asInstanceOf[Employee]
+
+if(p.getClass == classOf[Employee]) {     //精确的匹配
+}
+
+---------------------------------------------------------------------------------
+
+class Animal(val name: String, val age: Int) {}
+class Dog(override val name:String,override val age: Int, val salary:Double) extends Animal(name,age) {}
+class Dog(name:String,age: Int, val salary:Double) extends Animal(name,age){}
+
+---------------------------------------------------------------------------------
+
+scala类型树
+Any
+ |
+ |
+ |-------------AnyVal  Boolean Byte Char  Double...
+ |
+ |-------------AnyRef  scala classes  java classes
+
+
+--------------------------------------------------------------------
+
+scala操作文件
+
+package com.wyd.file
+
+import scala.io.Source
+
+object FileDemo {
+
+  def main(args: Array[String]): Unit = {
+    val source = Source.fromFile("/Users/wangyadi/Documents/a.xml")
+    val lines: Iterator[String] = source.getLines()
+
+    for(line <- lines){
+      println(line)
+    }
+  }
+
+}
+
+-------------------------------------------------------------------------
+
+class Employee extends People with Log with Eat
+						类          特质     特质
+
+class Student extends Log with Eat 
+					  特质      特质
+
+接口的动态实现
+val animal = new Animal("doudou", 4) with Log {
+      override def run(): Unit = {
+        println("wangwang")
+      }
+    }
+
+------------------------------------------------------------------
+
+apply和unapply方法
+
+package com.wyd.traittest
+
+class Fraction(val a: Int, val b: Int) {
+
+}
+
+object Fraction{
+  def apply(a: Int, b: Int):Fraction = new Fraction(a, b)
+
+  def unapply(f: Fraction): Option[(Int, Int)] = Some((f.a,f.b))
+}
+
+package com.wyd.demo
+
+import com.wyd.traittest.Fraction
+
+object Test {
+
+  def main(args: Array[String]): Unit = {
+    val fraction = Fraction(1,2)
+
+    var Fraction(a,b) = fraction
+
+    println(a)
+    println(b)
+  }
+
+}
+
+--------------------------------------------------------------------------
+
+高阶函数
+返回值或参数是函数的函数就是高阶函数
+
+定义匿名函数
+val f:(Int,Int) => Int = (a,b) => a +b
+val f2 = (a:Int, b:Int) => a * b
+
+
+def f(a:Int,b:Int) = {a + b}
+
+val a = f _  //方法转函数
+
+定义高价函数
+def call(x: Int, y: Int, f1:(Int,Int) => Int, f2:(Int,Int) => Int): Int ={
+    if(x >= 0) {
+      f1(x,y)
+    } else {
+      f2(x,y)
+    }
+}
+
+定义返回函数的高阶函数
+def createf(x: Int, y: Int):(Int) => Int ={
+    val z = x + y
+    val f:(Int) => Int = (x) => x + z
+    f
+  }
+
+----------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
