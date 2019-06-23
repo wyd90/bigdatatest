@@ -13,6 +13,7 @@
         <option value="$PROJECT_DIR$/flumetest/pom.xml" />
         <option value="$PROJECT_DIR$/hbasetest/pom.xml" />
         <option value="$PROJECT_DIR$/hadooptest/pom.xml" />
+        <option value="$PROJECT_DIR$/stormtest/pom.xml" />
       </list>
     </option>
   </component>

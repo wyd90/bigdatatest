@@ -15,7 +15,11 @@
         <module name="sparkstreamingkafka010" />
         <module name="sparkstreamingkafka080" />
         <module name="sparktest" />
+        <module name="stormtest" />
       </profile>
     </annotationProcessing>
+    <bytecodeTargetLevel>
+      <module name="bigdatatest" target="1.5" />
+    </bytecodeTargetLevel>
   </component>
 </project>
