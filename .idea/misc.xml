@@ -17,6 +17,7 @@
         <option value="$PROJECT_DIR$/hivetest/pom.xml" />
         <option value="$PROJECT_DIR$/userdraw/pom.xml" />
         <option value="$PROJECT_DIR$/userdrawself/pom.xml" />
+        <option value="$PROJECT_DIR$/hiveonsparkwithhbase/pom.xml" />
       </list>
     </option>
   </component>

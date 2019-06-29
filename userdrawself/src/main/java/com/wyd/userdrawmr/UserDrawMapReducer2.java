@@ -46,9 +46,9 @@ public class UserDrawMapReducer2 {
             v = new Text();
 
             Configuration conf = new Configuration();
-            conf.set("fs.defaultFS", "file:///");
-            FileSystem fs = FileSystem.get(URI.create("/Users/wangyadi/yarnData/userDraw/appData"), conf);
-            FSDataInputStream in = fs.open(new Path("file:///Users/wangyadi/yarnData/userDraw/appData/appTab.txt"));
+            //conf.set("fs.defaultFS", "file:///");
+            FileSystem fs = FileSystem.get(URI.create("hdfs://hdp12"), conf);
+            FSDataInputStream in = fs.open(new Path("userdraw/appdata/appTab.txt"));
             BufferedReader br = new BufferedReader(new InputStreamReader(in));
             String line = null;
             while ((line = br.readLine()) != null) {
@@ -115,9 +115,12 @@ public class UserDrawMapReducer2 {
 
 
     public static void main(String[] args) throws IOException, ClassNotFoundException, InterruptedException {
+        System.setProperty("HADOOP_USER_NAME","root");
+
         Configuration conf = new Configuration();
         Job job2 = Job.getInstance(conf);
-        job2.setJarByClass(UserDrawMapReducer2.class);
+        //job2.setJarByClass(UserDrawMapReducer2.class);
+        job2.setJar("/Users/wangyadi/IdeaProjects/bigdatatest/userdrawself/target/userdrawself-1.0-SNAPSHOT.jar");
         job2.setJobName("UserDrawMapReduceStage2");
 
         job2.setMapperClass(UserDrawMapper2.class);
@@ -129,8 +132,8 @@ public class UserDrawMapReducer2 {
         job2.setOutputKeyClass(Text.class);
         job2.setOutputValueClass(Text.class);
 
-        FileInputFormat.addInputPath(job2, new Path("/Users/wangyadi/yarnData/userDraw/out1"));
-        FileOutputFormat.setOutputPath(job2, new Path("/Users/wangyadi/yarnData/userDraw/out2"));
+        FileInputFormat.addInputPath(job2, new Path("userdraw/out1"));
+        FileOutputFormat.setOutputPath(job2, new Path("userdraw/out2"));
 
         boolean stage2 = job2.waitForCompletion(true);
     }

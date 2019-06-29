@@ -108,11 +108,14 @@ public class UserDrawMapReduce {
 
 
     public static void main(String[] args) throws IOException, ClassNotFoundException, InterruptedException {
+        System.setProperty("HADOOP_USER_NAME","root");
+
         Configuration conf = new Configuration();
-        conf.set("fs.defaultFS","file:///");
+        //conf.set("fs.defaultFS","file:///");
         Job job = Job.getInstance(conf);
 
-        job.setJarByClass(UserDrawMapReduce.class);
+        //job.setJarByClass(UserDrawMapReduce.class);
+        job.setJar("/Users/wangyadi/IdeaProjects/bigdatatest/userdrawself/target/userdrawself-1.0-SNAPSHOT.jar");
         job.setJobName("UserDrawMapReduceStage1");
 
         job.setMapperClass(UserDrawMapper.class);
@@ -123,8 +126,8 @@ public class UserDrawMapReduce {
         job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(Text.class);
 
-        FileInputFormat.addInputPath(job, new Path("/Users/wangyadi/yarnData/userDraw/input"));
-        FileOutputFormat.setOutputPath(job, new Path("/Users/wangyadi/yarnData/userDraw/out1"));
+        FileInputFormat.addInputPath(job, new Path("userdraw/input"));
+        FileOutputFormat.setOutputPath(job, new Path("userdraw/out1"));
 
         job.waitForCompletion(true);
 
