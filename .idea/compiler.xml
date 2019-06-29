@@ -11,15 +11,15 @@
         <module name="hadooptest" />
         <module name="hbasetest" />
         <module name="hiveonsparktest" />
+        <module name="hivetest" />
         <module name="sparkmongo" />
         <module name="sparkstreamingkafka010" />
         <module name="sparkstreamingkafka080" />
         <module name="sparktest" />
         <module name="stormtest" />
+        <module name="userdraw" />
+        <module name="userdrawself" />
       </profile>
     </annotationProcessing>
-    <bytecodeTargetLevel>
-      <module name="bigdatatest" target="1.5" />
-    </bytecodeTargetLevel>
   </component>
 </project>
