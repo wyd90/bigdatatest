@@ -16,4 +16,9 @@ object PipeDemo {
     println(rdd2.collect().toBuffer)
   }
 
+  def toSub(a: java.util.ArrayList[Int], k: Int):java.util.ArrayList[Int] = {
+    a.remove(k)
+    a
+  }
+
 }

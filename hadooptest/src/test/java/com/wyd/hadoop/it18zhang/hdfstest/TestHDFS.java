@@ -9,9 +9,7 @@ import org.apache.hadoop.io.IOUtils;
 import org.apache.hadoop.util.Progressable;
 import org.junit.Test;
 
-import java.io.BufferedInputStream;
-import java.io.FileInputStream;
-import java.io.IOException;
+import java.io.*;
 import java.net.URI;
 
 public class TestHDFS {
@@ -61,6 +59,60 @@ public class TestHDFS {
         FSDataOutputStream out = fs.create(new Path("myjson3"), true, 4096, new Short("1"), 134217728L);
 
         IOUtils.copyBytes(in, out, 4096, true);
+    }
+
+    @Test
+    public void loadData() throws IOException {
+        Configuration conf = new Configuration();
+        FileSystem fs = FileSystem.get(URI.create("file:////Users/wangyadi/yarnData/join/input"), conf);
+        FSDataInputStream in = fs.open(new Path("/Users/wangyadi/yarnData/join/input/user.txt"));
+
+        BufferedReader bf = new BufferedReader(new InputStreamReader(in));
+        String line = null;
+        while ((line = bf.readLine()) != null){
+            System.out.println(line);
+        }
+        bf.close();
+        fs.close();
+    }
+
+    @Test
+    public void writeToFile() throws IOException {
+        Configuration conf = new Configuration();
+        FileSystem fs = FileSystem.get(URI.create("file:////Users/wangyadi/yarnData/join/input"), conf);
+
+        FSDataInputStream in = fs.open(new Path("/Users/wangyadi/yarnData/join/input/user.txt"));
+
+        File file = new File("/Users/wangyadi/yarnData/join/fileOutput");
+        if(!file.exists()){
+            file.createNewFile();
+        }
+        FileOutputStream os = new FileOutputStream(file);
+        IOUtils.copyBytes(in,os,1024,true);
+    }
+
+    @Test
+    public void writeToFile2() throws IOException {
+        Configuration conf = new Configuration();
+        FileSystem fs = FileSystem.get(URI.create("file:////Users/wangyadi/yarnData/join/input"), conf);
+
+        FSDataInputStream in = fs.open(new Path("/Users/wangyadi/yarnData/join/input/user.txt"));
+
+        File file = new File("/Users/wangyadi/yarnData/join/fileOutput.txt");
+        if(!file.exists()){
+            file.createNewFile();
+        }
+        FileOutputStream os = new FileOutputStream(file);
+
+        byte[] buf = new byte[1024];
+        int len = 0;
+        while ((len = in.read(buf)) != -1){
+            os.write(buf,0,len);
+            os.flush();
+        }
+        in.close();
+        os.close();
+        fs.close();
     }
 
 

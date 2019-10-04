@@ -657,6 +657,7 @@ public class HBaseCRUDTest {
 
         PageFilter pageFilter = new PageFilter(10);
 
+
         Scan scan = new Scan();
         scan.setFilter(pageFilter);
 

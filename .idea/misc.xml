@@ -18,6 +18,10 @@
         <option value="$PROJECT_DIR$/userdraw/pom.xml" />
         <option value="$PROJECT_DIR$/userdrawself/pom.xml" />
         <option value="$PROJECT_DIR$/hiveonsparkwithhbase/pom.xml" />
+        <option value="$PROJECT_DIR$/wordcount/pom.xml" />
+        <option value="$PROJECT_DIR$/iotmessage/pom.xml" />
+        <option value="$PROJECT_DIR$/zktest/pom.xml" />
+        <option value="$PROJECT_DIR$/flinktest/pom.xml" />
       </list>
     </option>
   </component>

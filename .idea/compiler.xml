@@ -7,12 +7,14 @@
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
         <module name="bigdatatest" />
+        <module name="flinktest" />
         <module name="flumetest" />
         <module name="hadooptest" />
         <module name="hbasetest" />
         <module name="hiveonsparktest" />
         <module name="hiveonsparkwithhbase" />
         <module name="hivetest" />
+        <module name="iotmessage" />
         <module name="sparkmongo" />
         <module name="sparkstreamingkafka010" />
         <module name="sparkstreamingkafka080" />
@@ -20,6 +22,8 @@
         <module name="stormtest" />
         <module name="userdraw" />
         <module name="userdrawself" />
+        <module name="wordcount" />
+        <module name="zktest" />
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
